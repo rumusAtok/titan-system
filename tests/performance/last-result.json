@@ -1,0 +1,74 @@
+{
+  "ran_at": "2026-11-13T07:43:13.721Z",
+  "environment": "single-host docker compose, synthetic data",
+  "reads": [
+    {
+      "path": "/api/case/cases?limit=50",
+      "concurrency": 5,
+      "errors": 0,
+      "samples": 100,
+      "p50_ms": 10,
+      "p95_ms": 16,
+      "max_ms": 29
+    },
+    {
+      "path": "/api/workflow/tasks",
+      "concurrency": 5,
+      "errors": 0,
+      "samples": 100,
+      "p50_ms": 10,
+      "p95_ms": 16,
+      "max_ms": 20
+    },
+    {
+      "path": "/api/telemetry/latest",
+      "concurrency": 5,
+      "errors": 0,
+      "samples": 100,
+      "p50_ms": 8,
+      "p95_ms": 13,
+      "max_ms": 21
+    },
+    {
+      "path": "/api/incident/incidents?limit=50",
+      "concurrency": 5,
+      "errors": 0,
+      "samples": 100,
+      "p50_ms": 9,
+      "p95_ms": 15,
+      "max_ms": 23
+    },
+    {
+      "path": "/api/asset/assets",
+      "concurrency": 5,
+      "errors": 0,
+      "samples": 100,
+      "p50_ms": 9,
+      "p95_ms": 16,
+      "max_ms": 21
+    }
+  ],
+  "rate_limit": {
+    "requests": 400,
+    "served": 76,
+    "throttled_429": 248,
+    "shed_by_bulkhead_503": 76,
+    "other_statuses": 0,
+    "retry_after_header_present": true,
+    "other_user_status": 200
+  },
+  "telemetry": {
+    "note": "includes the polling interval of this test (25 ms) and one API round trip",
+    "samples": 30,
+    "p50_ms": 46,
+    "p95_ms": 54,
+    "max_ms": 77
+  },
+  "alarm_to_incident": {
+    "note": "MQTT -> telemetry -> alert -> incident: three services and two event hops",
+    "samples": 5,
+    "p50_ms": 255,
+    "p95_ms": 380,
+    "max_ms": 380
+  }
+}

@@ -1,0 +1,118 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: titan
+  labels:
+    app.kubernetes.io/part-of: titan
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  {{- with .Values.ingress.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  tls:
+    - hosts: [{{ .Values.ingress.web.host | quote }}]
+      secretName: {{ .Values.ingress.web.tlsSecretName }}
+    - hosts: [{{ .Values.ingress.api.host | quote }}]
+      secretName: {{ .Values.ingress.api.tlsSecretName }}
+  rules:
+    - host: {{ .Values.ingress.web.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port: { name: http }
+    - host: {{ .Values.ingress.api.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: gateway
+                port: { name: http }
+{{- end }}
+{{- if not .Values.lake.existingClaim }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: titan-lake
+  labels:
+    app.kubernetes.io/part-of: titan
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  annotations:
+    # Derived data: can be rebuilt from the event stream and backups, but keep it across upgrades.
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [{{ .Values.lake.accessMode | quote }}]
+  {{- with .Values.lake.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.lake.size }}
+{{- end }}
+{{- if .Values.serviceMonitor.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: titan
+  labels:
+    app.kubernetes.io/part-of: titan
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: titan
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.serviceMonitor.interval }}
+{{- end }}
+{{- if .Values.externalSecrets.enabled }}
+{{- range $name, $svc := .Values.services }}
+{{- if $svc.database }}
+---
+# Database credentials come from the secret manager, never from Git or Helm values.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: {{ printf "%s-db" $name }}
+  labels:
+    app.kubernetes.io/part-of: titan
+spec:
+  refreshInterval: {{ $.Values.externalSecrets.refreshInterval }}
+  secretStoreRef: {{- toYaml $.Values.externalSecrets.secretStoreRef | nindent 4 }}
+  target:
+    name: {{ printf "%s-db" $name }}
+    creationPolicy: Owner
+  dataFrom:
+    - extract:
+        key: {{ printf "%s/%s-db" $.Values.externalSecrets.pathPrefix $name }}
+{{- end }}
+{{- if $svc.identitySecret }}
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: {{ printf "%s-identity" $name }}
+  labels:
+    app.kubernetes.io/part-of: titan
+spec:
+  refreshInterval: {{ $.Values.externalSecrets.refreshInterval }}
+  secretStoreRef: {{- toYaml $.Values.externalSecrets.secretStoreRef | nindent 4 }}
+  target:
+    name: {{ printf "%s-identity" $name }}
+    creationPolicy: Owner
+  dataFrom:
+    - extract:
+        key: {{ printf "%s/%s-identity" $.Values.externalSecrets.pathPrefix $name }}
+{{- end }}
+{{- end }}
+{{- end }}

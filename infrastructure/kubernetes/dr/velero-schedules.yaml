@@ -1,0 +1,61 @@
+# PLANNED production configuration (Velero). Schema-validated, NOT deployed or
+# tested from this repository.
+#
+# Velero backs up Kubernetes objects (and volume snapshots of stateful sets
+# that are not covered by an application-level backup) to object storage in
+# the DR region. PostgreSQL is NOT recovered from these: it has its own
+# continuous backup (CloudNativePG / barman), which is consistent and
+# supports point-in-time recovery.
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: titan-cluster-state-hourly
+  namespace: velero
+spec:
+  schedule: "15 * * * *"
+  useOwnerReferencesInBackup: false
+  template:
+    includedNamespaces:
+      - titan
+      - titan-identity
+      - titan-messaging
+      - titan-observability
+    excludedResources:
+      # Secrets are restored from the secret manager, not from backups.
+      - secrets
+    snapshotVolumes: false
+    storageLocation: dr-region
+    ttl: 168h0m0s
+---
+# Daily backup including volume data of the event broker and the analytical lake.
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: titan-volumes-daily
+  namespace: velero
+spec:
+  schedule: "30 2 * * *"
+  template:
+    includedNamespaces:
+      - titan
+      - titan-messaging
+    snapshotVolumes: true
+    defaultVolumesToFsBackup: true
+    storageLocation: dr-region
+    ttl: 720h0m0s
+---
+apiVersion: velero.io/v1
+kind: BackupStorageLocation
+metadata:
+  name: dr-region
+  namespace: velero
+spec:
+  provider: aws
+  objectStorage:
+    bucket: titan-velero-dr
+    prefix: primary-cluster
+  # Object lock (WORM) on this bucket protects backups from deletion or
+  # encryption by an attacker who has compromised the primary region.
+  accessMode: ReadWrite
+  config:
+    region: dr-region-1

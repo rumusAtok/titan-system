@@ -1,0 +1,24 @@
+# DR region, warm standby: everything is deployed and kept at the current
+# version, scaled to zero. The failover runbook scales workloads up AFTER the
+# DR database has been promoted (a service must never start against a
+# read-only replica and report itself ready).
+global:
+  environment: production-dr-standby
+  database:
+    host: titan-pg-dr-rw.titan-data.svc
+defaults:
+  replicas: 0
+  podDisruptionBudget:
+    enabled: false
+ingress:
+  # Traffic reaches the DR region only after the global DNS / load balancer switch.
+  enabled: true
+services:
+  gateway:
+    replicas: 0
+    autoscaling:
+      enabled: false
+  telemetry-service:
+    replicas: 0
+  data-pipeline-service:
+    replicas: 0

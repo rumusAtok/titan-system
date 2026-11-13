@@ -1,0 +1,122 @@
+# Continuous integration for TITAN.
+#
+# STATUS: this workflow has NOT been executed (the repository has no remote).
+# Every command in it is the same command that was run locally and recorded in
+# docs/testing/verification-report.md; expect to adjust runner details on first use.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-unit-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Type-check and unit-test the Node services (vitest)
+        run: docker build -f infrastructure/docker/node-service.Dockerfile --target unit-test --progress=plain .
+
+      - name: Unit-test the data pipeline (pytest)
+        run: docker build -f infrastructure/docker/python-service.Dockerfile --build-arg SERVICE_PATH=services/data-pipeline-service --target unit-test --progress=plain .
+
+      - name: Unit-test the AI gateway (pytest)
+        run: docker build -f infrastructure/docker/python-service.Dockerfile --build-arg SERVICE_PATH=services/ai-gateway-service --target unit-test --progress=plain .
+
+      - name: Build the web command center
+        run: docker build -f infrastructure/docker/web/Dockerfile .
+
+  dependency-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Audit runtime dependencies of the Node services
+        run: npm audit --omit=dev --audit-level=high
+      - name: Audit runtime dependencies of the web application
+        working-directory: apps/web
+        run: npm audit --omit=dev --audit-level=high
+      - name: Audit Python dependencies
+        run: |
+          pip install pip-audit
+          pip-audit ./packages/pykit
+          pip-audit -r services/data-pipeline-service/requirements.txt
+          pip-audit -r services/analytics-service/requirements.txt
+
+  kubernetes-manifests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint the Helm chart
+        run: docker run --rm -v "$PWD/infrastructure/helm:/charts" alpine/helm:3.19.0 lint /charts/titan
+      - name: Render and validate the chart and the platform manifests
+        env:
+          CRDS: https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json
+        run: |
+          docker run --rm -v "$PWD/infrastructure/helm:/charts" alpine/helm:3.19.0 template titan /charts/titan \
+            --set externalSecrets.enabled=true --set serviceMonitor.enabled=true > rendered.yaml
+          docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 -strict -summary -kubernetes-version 1.31.0 \
+            -schema-location default -schema-location "$CRDS" - < rendered.yaml
+          docker run --rm -v "$PWD/infrastructure/kubernetes:/k" ghcr.io/yannh/kubeconform:v0.7.0 -strict -summary \
+            -kubernetes-version 1.31.0 -schema-location default -schema-location "$CRDS" \
+            /k/platform/postgres-cluster.yaml /k/platform/keycloak.yaml /k/dr /k/argocd
+      - name: Validate the OpenTofu module
+        run: |
+          docker run --rm -v "$PWD/infrastructure:/infra" -w /infra/opentofu --entrypoint sh ghcr.io/opentofu/opentofu:1.10 \
+            -c "tofu fmt -check && tofu init -backend=false -input=false && tofu validate"
+
+  integration:
+    needs: build-and-unit-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Prepare
+        run: |
+          cp .env.example .env
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Start the stack
+        run: docker compose --profile core --profile iot --profile analytics --profile ai up -d --build --wait --wait-timeout 600
+      - name: Seed synthetic data
+        run: npm run seed
+      - name: Integration, security and contract tests
+        run: npm run test:integration
+      - name: Browser tests
+        run: |
+          docker run --rm --init --ipc=host --network titan -e TITAN_E2E_FORWARD=1 -e CI=1 \
+            -e DEMO_USER_PASSWORD="$(grep '^DEMO_USER_PASSWORD=' .env | cut -d= -f2)" \
+            -v "$PWD/tests/e2e:/e2e" -w /e2e mcr.microsoft.com/playwright:v1.65.0-noble \
+            sh -c "npm install --no-audit --no-fund && npx playwright test"
+      - name: Backup and restore drill
+        run: |
+          docker compose --profile dr-lab up -d postgres-dr dr-tools
+          npm run dr:restore-drill
+      - name: Collect logs on failure
+        if: failure()
+        run: docker compose --profile core --profile iot --profile analytics --profile ai logs --no-color --tail 200 > compose-logs.txt
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: diagnostics
+          path: |
+            compose-logs.txt
+            tests/e2e/test-results
+            infrastructure/disaster-recovery/reports

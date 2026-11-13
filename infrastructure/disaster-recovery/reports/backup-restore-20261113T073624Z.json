@@ -1,0 +1,179 @@
+{
+  "drill_id": "backup-restore-20261113T073624Z",
+  "type": "backup-restore",
+  "started_at": "2026-11-13T07:36:24.458Z",
+  "finished_at": "2026-11-13T07:37:12.054Z",
+  "result": "passed",
+  "environment": {
+    "topology": "single-host laboratory (docker compose); primary and recovery databases are containers on one machine",
+    "disclaimer": "Demonstrates the recovery procedure. NOT geographic disaster recovery and NOT evidence of production recovery times.",
+    "data": "synthetic"
+  },
+  "objectives": {
+    "rto_seconds": 14400,
+    "rpo_seconds": 86400,
+    "note": "Targets for recovery from backup alone (no standby): restore within 4 h; loss bounded by the backup interval."
+  },
+  "observed": {
+    "rto_seconds": 13.8,
+    "rpo_seconds": 18.5,
+    "data_loss_transactions": 1
+  },
+  "summary": "Backup backup-20261113T073629Z restored into an isolated instance and verified in 13.8 s. Recovery point is the start of the backup, 18.5 s before the simulated disaster; the 1 transaction written after the backup was lost, as expected for backup-only recovery.",
+  "steps": [
+    {
+      "name": "Start recovery tooling",
+      "started_at": "2026-11-13T07:36:24.459Z",
+      "duration_ms": 524,
+      "status": "passed",
+      "detail": null
+    },
+    {
+      "name": "Create representative transactions (before the backup)",
+      "started_at": "2026-11-13T07:36:24.983Z",
+      "duration_ms": 1145,
+      "status": "passed",
+      "detail": "2 cases (1 approved, 1 in review), 1 asset"
+    },
+    {
+      "name": "Back up all databases",
+      "started_at": "2026-11-13T07:36:29.138Z",
+      "duration_ms": 18731,
+      "status": "passed",
+      "detail": "backup-20261113T073629Z: 14 databases, 1.1 MB in 18.5 s"
+    },
+    {
+      "name": "Create one transaction AFTER the backup (expected to be lost)",
+      "started_at": "2026-11-13T07:36:47.869Z",
+      "duration_ms": 28,
+      "status": "passed",
+      "detail": "case APP-2026-000031"
+    },
+    {
+      "name": "Start an isolated, empty recovery instance",
+      "started_at": "2026-11-13T07:36:47.897Z",
+      "duration_ms": 8039,
+      "status": "passed",
+      "detail": "roles and empty databases present, no tables"
+    },
+    {
+      "name": "Verify backup file checksums",
+      "started_at": "2026-11-13T07:36:55.936Z",
+      "duration_ms": 2278,
+      "status": "passed",
+      "detail": "14 archives match their SHA-256"
+    },
+    {
+      "name": "Restore every database from the backup",
+      "started_at": "2026-11-13T07:36:58.214Z",
+      "duration_ms": 6831,
+      "status": "passed",
+      "detail": "14 databases restored"
+    },
+    {
+      "name": "Verify restored row counts",
+      "started_at": "2026-11-13T07:37:05.046Z",
+      "duration_ms": 2954,
+      "status": "passed",
+      "detail": "15 tables within the bounds recorded at backup time"
+    },
+    {
+      "name": "Verify recorded transactions in the restored databases",
+      "started_at": "2026-11-13T07:37:08.000Z",
+      "duration_ms": 1596,
+      "status": "passed",
+      "detail": "cases, decisions, pending task, asset, audit records, identity store and RLS present"
+    },
+    {
+      "name": "Detect lost transactions",
+      "started_at": "2026-11-13T07:37:09.596Z",
+      "duration_ms": 235,
+      "status": "passed",
+      "detail": "1 transaction created after the backup is absent, as expected (APP-2026-000031)"
+    },
+    {
+      "name": "Run application operations against the restored database",
+      "started_at": "2026-11-13T07:37:09.831Z",
+      "duration_ms": 2212,
+      "status": "passed",
+      "detail": "read restored case, created APP-2026-000031, tenant isolation holds"
+    },
+    {
+      "name": "Confirm the primary was not affected",
+      "started_at": "2026-11-13T07:37:12.043Z",
+      "duration_ms": 9,
+      "status": "passed",
+      "detail": "the live platform still has every transaction"
+    }
+  ],
+  "evidence": {
+    "transactions_before_backup": {
+      "approved_case": {
+        "id": "79395fe2-1514-4c0d-996d-901bb83bdfe8",
+        "reference_no": "APP-2026-000029",
+        "created_at": "2026-11-13T07:36:25.085Z"
+      },
+      "in_review_case": {
+        "id": "2b02f2c3-18e5-4e18-9919-161b2eda8704",
+        "reference_no": "APP-2026-000030",
+        "created_at": "2026-11-13T07:36:25.563Z"
+      },
+      "asset": {
+        "id": "21a5f15a-e3ba-4c67-9c98-2f190d1df898",
+        "code": "DRR-T073624Z"
+      }
+    },
+    "backup": {
+      "backup_id": "backup-20261113T073629Z",
+      "databases": 14,
+      "total_bytes": 1133600,
+      "duration_seconds": 18.5,
+      "wal_lsn_at_start": "0/91B3F58",
+      "completed_at": "2026-11-13T07:36:47.868Z"
+    },
+    "transaction_after_backup": {
+      "id": "c3d31262-1af7-4dbb-9b19-4c81a474c056",
+      "reference_no": "APP-2026-000031",
+      "created_at": "2026-11-13T07:36:47.897Z"
+    },
+    "simulated_disaster_at": "2026-11-13T07:36:47.897Z",
+    "restored_row_counts": {
+      "titan_tenant.tenants": 2,
+      "titan_tenant.departments": 8,
+      "titan_case.cases": 30,
+      "titan_case.case_status_history": 115,
+      "titan_workflow.workflow_instances": 33,
+      "titan_workflow.workflow_tasks": 60,
+      "titan_workflow.workflow_decisions": 41,
+      "titan_audit.audit_events": 580,
+      "titan_asset.assets": 17,
+      "titan_incident.incidents": 8,
+      "titan_device.devices": 12,
+      "titan_alert.alert_rules": 8,
+      "titan_alert.alerts": 14,
+      "titan_notification.notifications": 99,
+      "keycloak.user_entity": 23
+    },
+    "lost_transactions": [
+      "APP-2026-000031"
+    ],
+    "application_check": {
+      "read_restored_case": "ok",
+      "post_backup_case": "absent (404)",
+      "new_case_created": "APP-2026-000031",
+      "tenant_isolation": "ok"
+    },
+    "timing": {
+      "restore_started_at": "2026-11-13T07:36:58.214Z",
+      "application_verified_at": "2026-11-13T07:37:12.043Z",
+      "explanation": "Observed RTO = from the start of the restore to a verified application on the restored database. Observed RPO = time between the START of the backup and the simulated disaster: the worst-case window of writes lost when recovering from this backup alone. In operation this window is the backup interval."
+    }
+  },
+  "limitations": [
+    "Single host, small synthetic dataset: restore time grows with data volume and is not representative of production.",
+    "The restore target is a container with disposable storage on the same machine as the primary.",
+    "Logical backup only. Point-in-time recovery from the WAL archive is configured (archive_mode=on) but was not exercised by this drill.",
+    "Only case-service was started against the restored data; the other services were verified at database level.",
+    "Object storage, event stream contents and the analytical lake are not part of this backup (see the DR architecture document)."
+  ]
+}

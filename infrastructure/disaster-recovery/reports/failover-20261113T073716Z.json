@@ -1,0 +1,233 @@
+{
+  "drill_id": "failover-20261113T073716Z",
+  "type": "failover",
+  "started_at": "2026-11-13T07:37:16.474Z",
+  "finished_at": "2026-11-13T07:38:12.590Z",
+  "result": "passed",
+  "environment": {
+    "topology": "single-host laboratory (docker compose); primary and recovery databases are containers on one machine",
+    "disclaimer": "Demonstrates the recovery procedure. NOT geographic disaster recovery and NOT evidence of production recovery times.",
+    "data": "synthetic"
+  },
+  "objectives": {
+    "rto_seconds": 3600,
+    "rpo_seconds": 300,
+    "note": "Tier 0 engineering objectives."
+  },
+  "observed": {
+    "rto_seconds": 47.8,
+    "rpo_seconds": 0,
+    "data_loss_transactions": 0
+  },
+  "summary": "Primary killed and fenced; standby promoted after confirmation; 17 services re-pointed. Observed RTO 47.8 s, observed RPO 0 s (0 acknowledged writes lost). The platform now runs on the recovery database; failback is pending.",
+  "steps": [
+    {
+      "name": "Check preconditions: standby is streaming from the primary",
+      "started_at": "2026-11-13T07:37:16.475Z",
+      "duration_ms": 1062,
+      "status": "passed",
+      "detail": "streaming, async, 0 bytes behind; 17 application services running"
+    },
+    {
+      "name": "1. Generate representative transactions and record them",
+      "started_at": "2026-11-13T07:37:17.537Z",
+      "duration_ms": 1457,
+      "status": "passed",
+      "detail": "approved APP-2026-000032, in review APP-2026-000033"
+    },
+    {
+      "name": "2. Start continuous writes (used to measure data loss)",
+      "started_at": "2026-11-13T07:37:18.995Z",
+      "duration_ms": 3401,
+      "status": "passed",
+      "detail": "12 writes acknowledged so far"
+    },
+    {
+      "name": "3. Verify standby replication immediately before the failure",
+      "started_at": "2026-11-13T07:37:22.396Z",
+      "duration_ms": 607,
+      "status": "passed",
+      "detail": "primary 0/93D4508, standby replayed 0/93DEF58"
+    },
+    {
+      "name": "4. Simulate loss of the primary database (SIGKILL)",
+      "started_at": "2026-11-13T07:37:23.003Z",
+      "duration_ms": 539,
+      "status": "passed",
+      "detail": "killed at 2026-11-13T07:37:23.003Z"
+    },
+    {
+      "name": "5. Detect the failure and confirm its scope",
+      "started_at": "2026-11-13T07:37:23.542Z",
+      "duration_ms": 4346,
+      "status": "passed",
+      "detail": "primary unreachable, standby reachable, 0 services not ready"
+    },
+    {
+      "name": "6. Fence the failed primary so it cannot accept writes again",
+      "started_at": "2026-11-13T07:37:31.372Z",
+      "duration_ms": 545,
+      "status": "passed",
+      "detail": "old primary container is exited, automatic restart disabled"
+    },
+    {
+      "name": "7. Inspect replication progress on the standby",
+      "started_at": "2026-11-13T07:37:31.917Z",
+      "duration_ms": 596,
+      "status": "passed",
+      "detail": "received 0/93E4F80, replayed 0/93E4F80"
+    },
+    {
+      "name": "8. Promote the recovery database",
+      "started_at": "2026-11-13T07:37:32.513Z",
+      "duration_ms": 1556,
+      "status": "passed",
+      "detail": "recovery database is now primary (timeline 2)"
+    },
+    {
+      "name": "9. Activate services against the recovery database",
+      "started_at": "2026-11-13T07:37:34.069Z",
+      "duration_ms": 35641,
+      "status": "passed",
+      "detail": "17 services recreated with DB_HOST=postgres-dr and ready"
+    },
+    {
+      "name": "10. Validate authentication (identity store recovered)",
+      "started_at": "2026-11-13T07:38:09.710Z",
+      "duration_ms": 195,
+      "status": "passed",
+      "detail": "new login succeeded; authentication and role checks enforced"
+    },
+    {
+      "name": "11. Validate data integrity of recorded transactions",
+      "started_at": "2026-11-13T07:38:09.905Z",
+      "duration_ms": 100,
+      "status": "passed",
+      "detail": "recorded cases and their decision history are intact"
+    },
+    {
+      "name": "12. Validate a core transaction end to end on the recovery site",
+      "started_at": "2026-11-13T07:38:10.005Z",
+      "duration_ms": 785,
+      "status": "passed",
+      "detail": "new application APP-2026-000034 submitted and approved through all stages"
+    },
+    {
+      "name": "13. Detect lost transactions",
+      "started_at": "2026-11-13T07:38:10.791Z",
+      "duration_ms": 44,
+      "status": "passed",
+      "detail": "0 of 12 acknowledged writes lost"
+    },
+    {
+      "name": "14. Verify event replay is idempotent and reconcile unfinished events",
+      "started_at": "2026-11-13T07:38:10.835Z",
+      "duration_ms": 1755,
+      "status": "passed",
+      "detail": "outboxes drained; no duplicate instances, tasks, incidents or notifications"
+    }
+  ],
+  "evidence": {
+    "replication_before": {
+      "state": "streaming",
+      "sync_state": "async",
+      "replay_lag_bytes": 0
+    },
+    "application_services": [
+      "ai-gateway-service",
+      "alert-service",
+      "analytics-service",
+      "asset-service",
+      "audit-service",
+      "case-service",
+      "data-pipeline-service",
+      "device-service",
+      "gateway",
+      "incident-service",
+      "keycloak",
+      "notification-service",
+      "sensor-simulator",
+      "telemetry-service",
+      "tenant-service",
+      "web",
+      "workflow-service"
+    ],
+    "transactions": {
+      "approved_case": {
+        "id": "f849187e-c742-4f30-8b88-ec94472b4c94",
+        "reference_no": "APP-2026-000032",
+        "created_at": "2026-11-13T07:37:17.652Z"
+      },
+      "in_review_case": {
+        "id": "947573d3-9f1a-4e2e-aa51-1079c208e43b",
+        "reference_no": "APP-2026-000033",
+        "created_at": "2026-11-13T07:37:18.480Z"
+      }
+    },
+    "lsn_before_failure": {
+      "primary": "0/93D4508",
+      "standby_replay": "0/93DEF58",
+      "lag_bytes": -43600
+    },
+    "primary_failed_at": "2026-11-13T07:37:23.003Z",
+    "failure_scope": {
+      "primary_database": "unreachable",
+      "recovery_database": "reachable",
+      "services_not_ready": [],
+      "platform_status": "gateway could not report"
+    },
+    "writes": {
+      "acknowledged_before_failure": 12,
+      "acknowledged_total": 12,
+      "refused_or_failed": 1
+    },
+    "standby_before_promotion": {
+      "received_lsn": "0/93E4F80",
+      "replayed_lsn": "0/93E4F80",
+      "last_replayed_transaction_at": "2026-11-13 07:37:22.975761+00",
+      "bytes_beyond_last_known_primary_lsn": 68216
+    },
+    "operator_confirmation": {
+      "given": true,
+      "at": "2026-11-13T07:37:32.513Z",
+      "method": "command-line flag"
+    },
+    "promotion": {
+      "promoted_at": "2026-11-13T07:37:34.069Z",
+      "timeline": "2"
+    },
+    "post_failover_transaction": {
+      "id": "69553478-e357-4467-9544-cbbae2192bec",
+      "reference_no": "APP-2026-000034",
+      "created_at": "2026-11-13T07:38:10.040Z"
+    },
+    "lost_writes": [],
+    "rpo_measurement": "None of the 12 writes acknowledged before the failure was lost. Measurement resolution is the 250 ms write interval; asynchronous replication can lose the last moments before a failure.",
+    "reconciliation": {
+      "outboxes_drained": true,
+      "duplicate_workflow_instances": 0,
+      "duplicate_tasks": 0,
+      "duplicate_incidents": 0,
+      "approval_notifications_for_recorded_case": 1,
+      "recent_dead_letters_workflow": 0
+    },
+    "timing": {
+      "primary_failed_at": "2026-11-13T07:37:23.003Z",
+      "core_transaction_verified_at": "2026-11-13T07:38:10.790Z",
+      "explanation": "Observed RTO = from the kill of the primary to a new application approved end to end on the recovery site. It includes detection, fencing, the (scripted) operator confirmation, promotion and service restart."
+    },
+    "traffic_redirection": "Not applicable in this lab: the gateway address is unchanged and services were re-pointed by configuration. In production this step is a DNS / global load balancer change.",
+    "next_steps": [
+      "The old primary is fenced and must be rebuilt as a standby before it is used again.",
+      "Run `npm run dr:failback` for a controlled return to the normal topology."
+    ]
+  },
+  "limitations": [
+    "Primary and recovery databases are containers on one host: no network partition, no site loss, no geographic separation was exercised.",
+    "Fencing was simulated by stopping the container and disabling its restart policy. Production fencing needs an independent mechanism (network isolation or power fencing) and quorum.",
+    "Replication is asynchronous: writes acknowledged in the last moments before a failure can be lost. This drill detects such loss but, with a local link, it rarely occurs.",
+    "The operator confirmation was supplied by a flag in this scripted run; a human decision takes longer and is part of real RTO.",
+    "NATS JetStream, MQTT broker state and the analytical lake were not failed over: they stayed up on the same host.",
+    "Small synthetic dataset; timings do not predict production."
+  ]
+}

@@ -1,0 +1,65 @@
+# Alert rules. In this local stack they are evaluated and visible in the
+# Prometheus UI; no Alertmanager is configured, so nothing is sent anywhere.
+groups:
+  - name: titan-availability
+    rules:
+      - alert: TitanServiceDown
+        expr: up{job=~"titan-.*"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.service }} is not answering its metrics endpoint"
+          runbook: docs/runbooks/monitoring-and-alerting.md#titanservicedown
+
+      - alert: TitanHighErrorRate
+        expr: |
+          sum by (service) (rate(titan_http_request_duration_seconds_count{status=~"5.."}[5m]))
+            / sum by (service) (rate(titan_http_request_duration_seconds_count[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.service }} answers more than 5% of requests with a server error"
+
+      - alert: TitanSlowRequests
+        expr: |
+          histogram_quantile(0.95, sum by (service, le) (rate(titan_http_request_duration_seconds_bucket[5m]))) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "95th percentile latency of {{ $labels.service }} is above 2 s"
+
+      - alert: TitanUpstreamCircuitOpen
+        expr: titan_circuit_breaker_open == 1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The gateway has stopped calling {{ $labels.upstream }} (circuit open)"
+
+  - name: titan-events
+    rules:
+      - alert: TitanOutboxBacklog
+        expr: titan_outbox_pending > 500
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.service }} has {{ $value }} unpublished events (broker unreachable or relay stuck)"
+
+      - alert: TitanEventsDeadLettered
+        expr: increase(titan_events_consumed_total{outcome=~"dead_letter|invalid"}[15m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.service }} moved events of type {{ $labels.event_type }} to the dead-letter queue"
+
+      - alert: TitanTelemetryIngestionStalled
+        expr: rate(titan_telemetry_messages_total{outcome="accepted"}[5m]) == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No telemetry has been accepted for 10 minutes"

@@ -1,0 +1,14 @@
+{
+  "name": "@titan/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser tests (Playwright). Run with scripts/test-e2e.ps1, which executes them in the official Playwright container.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "@playwright/test": "1.65.0"
+  }
+}

@@ -1,0 +1,78 @@
+# PLANNED GitOps configuration (Argo CD). Schema-validated, NOT deployed or
+# tested from this repository.
+#
+# Git is the source of truth for what runs in each region. Rebuilding a
+# region's workloads after a disaster is "point Argo CD at the same
+# repository": no manual kubectl history to reconstruct.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: titan
+  namespace: argocd
+spec:
+  description: TITAN platform
+  sourceRepos:
+    - https://git.example.gov/titan/titan-platform.git
+  destinations:
+    - namespace: "titan*"
+      server: "*"
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+  namespaceResourceBlacklist:
+    # Workloads are never allowed to create cluster-wide access.
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
+---
+# One Application per region, generated from the list of clusters.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: titan-services
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - list:
+        elements:
+          - region: primary
+            cluster: https://primary.k8s.example.gov
+            # Full capacity, serving traffic.
+            valuesFile: values-primary.yaml
+          - region: dr
+            cluster: https://dr.k8s.example.gov
+            # Warm standby: workloads are deployed and kept current but scaled
+            # down; the failover runbook scales them up after database promotion.
+            valuesFile: values-dr-standby.yaml
+  template:
+    metadata:
+      name: "titan-{{ .region }}"
+    spec:
+      project: titan
+      source:
+        repoURL: https://git.example.gov/titan/titan-platform.git
+        targetRevision: main
+        path: infrastructure/helm/titan
+        helm:
+          releaseName: titan
+          valueFiles:
+            - "{{ .valuesFile }}"
+      destination:
+        server: "{{ .cluster }}"
+        namespace: titan
+      syncPolicy:
+        # The primary self-heals. Changes that affect recovery state (replica
+        # promotion, scaling the DR region up) are merged deliberately.
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 3m

@@ -1,0 +1,38 @@
+#!/bin/sh
+# Writes the browser runtime configuration from environment variables, so the
+# same image runs in every environment. Only public values belong here.
+#
+# The ".envsh" suffix makes the nginx entrypoint SOURCE this file, and the
+# "15-" prefix runs it before the template step (20-), so the variables
+# exported at the end are available to nginx.conf.template.
+
+: "${TITAN_GATEWAY_URL:=http://localhost:8080}"
+: "${TITAN_KEYCLOAK_URL:=http://localhost:8081}"
+: "${TITAN_ENVIRONMENT:=local-development}"
+
+# Map background. The default is the public OpenStreetMap tile server, which the
+# viewer's browser contacts directly. Set TITAN_MAP_TILE_URL to another raster
+# tile template, or to "none" to draw the map without any external requests.
+# (The default is assigned separately on purpose: inside ${VAR:=...} the shell
+# would end the expansion at the first "}" of "{z}".)
+TITAN_DEFAULT_TILE_URL='https://tile.openstreetmap.org/{z}/{x}/{y}.png'
+[ -n "${TITAN_MAP_TILE_URL:-}" ] || TITAN_MAP_TILE_URL=$TITAN_DEFAULT_TILE_URL
+case "$TITAN_MAP_TILE_URL" in none|NONE|off|OFF) TITAN_MAP_TILE_URL='' ;; esac
+
+# On Kubernetes config.js is mounted read-only from a ConfigMap: leave it alone there.
+if [ -w /usr/share/nginx/html/config.js ]; then
+cat > /usr/share/nginx/html/config.js <<CONFIG
+window.__TITAN_CONFIG__ = {
+  gatewayUrl: '${TITAN_GATEWAY_URL}',
+  keycloakUrl: '${TITAN_KEYCLOAK_URL}',
+  realm: 'titan',
+  clientId: 'titan-web',
+  environment: '${TITAN_ENVIRONMENT}',
+  mapTileUrl: '${TITAN_MAP_TILE_URL}',
+};
+CONFIG
+fi
+
+# Origin (scheme://host[:port]) of the tile server, for the Content-Security-Policy.
+TITAN_MAP_TILE_ORIGIN=$(printf '%s' "$TITAN_MAP_TILE_URL" | sed -E 's#^(https?://[^/]+).*#\1#')
+export TITAN_GATEWAY_URL TITAN_KEYCLOAK_URL TITAN_MAP_TILE_ORIGIN

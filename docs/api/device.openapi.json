@@ -1,0 +1,266 @@
+{
+  "components": {
+    "schemas": {},
+    "securitySchemes": {
+      "bearer": {
+        "bearerFormat": "JWT",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "contact": {},
+    "description": "IoT device registry, sensor definitions, device status and configuration.",
+    "title": "TITAN device-service",
+    "version": "0.1.0"
+  },
+  "openapi": "3.0.0",
+  "paths": {
+    "/devices": {
+      "get": {
+        "operationId": "DeviceController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "devices"
+        ]
+      },
+      "post": {
+        "operationId": "DeviceController_register",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "asset_id": {
+                    "default": null,
+                    "format": "uuid",
+                    "nullable": true,
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "type": "string"
+                  },
+                  "config": {
+                    "additionalProperties": {},
+                    "default": {},
+                    "type": "object"
+                  },
+                  "device_type": {
+                    "maxLength": 64,
+                    "minLength": 2,
+                    "type": "string"
+                  },
+                  "expected_interval_seconds": {
+                    "default": 30,
+                    "maximum": 86400,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "latitude": {
+                    "default": null,
+                    "maximum": 90,
+                    "minimum": -90,
+                    "nullable": true,
+                    "type": "number"
+                  },
+                  "longitude": {
+                    "default": null,
+                    "maximum": 180,
+                    "minimum": -180,
+                    "nullable": true,
+                    "type": "number"
+                  },
+                  "name": {
+                    "maxLength": 200,
+                    "minLength": 2,
+                    "type": "string"
+                  },
+                  "sensors": {
+                    "items": {
+                      "properties": {
+                        "kind": {
+                          "pattern": "^[a-z][a-z0-9_]{1,31}$",
+                          "type": "string"
+                        },
+                        "max_valid": {
+                          "default": null,
+                          "nullable": true,
+                          "type": "number"
+                        },
+                        "min_valid": {
+                          "default": null,
+                          "nullable": true,
+                          "type": "number"
+                        },
+                        "unit": {
+                          "maxLength": 16,
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "unit"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 32,
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "serial_no": {
+                    "maxLength": 64,
+                    "minLength": 3,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "serial_no",
+                  "name",
+                  "device_type",
+                  "sensors"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Register an IoT device and its sensors",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
+    "/devices/summary": {
+      "get": {
+        "operationId": "DeviceController_summary",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Device counts by status and current availability",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
+    "/devices/{id}": {
+      "get": {
+        "operationId": "DeviceController_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "devices"
+        ]
+      }
+    },
+    "/devices/{id}/config": {
+      "patch": {
+        "operationId": "DeviceController_updateConfig",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "config": {
+                    "additionalProperties": {},
+                    "type": "object"
+                  },
+                  "expected_version": {
+                    "exclusiveMinimum": true,
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "config",
+                  "expected_version"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "devices"
+        ]
+      }
+    },
+    "/devices/{id}/decommission": {
+      "post": {
+        "operationId": "DeviceController_decommission",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "devices"
+        ]
+      }
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    }
+  ],
+  "servers": [],
+  "tags": []
+}

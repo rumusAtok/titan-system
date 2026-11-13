@@ -1,0 +1,281 @@
+{{- range $name, $svc := .Values.services }}
+{{- $ctx := dict "root" $ "name" $name "svc" $svc }}
+{{- $port := include "titan.port" $svc | int }}
+{{- $replicas := include "titan.replicas" $ctx | int }}
+{{- $short := include "titan.shortName" $name }}
+{{- $resources := default $.Values.defaults.resources $svc.resources }}
+{{- $strategy := default $.Values.defaults.strategy $svc.strategy }}
+{{- $autoscaling := merge (default dict $svc.autoscaling) $.Values.defaults.autoscaling }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  labels: {{- include "titan.labels" $ctx | nindent 4 }}
+automountServiceAccountToken: {{ $.Values.serviceAccount.automountToken }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels: {{- include "titan.labels" $ctx | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector: {{- include "titan.selectorLabels" $ctx | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ $port }}
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels: {{- include "titan.labels" $ctx | nindent 4 }}
+spec:
+  {{- if not $autoscaling.enabled }}
+  replicas: {{ $replicas }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  strategy: {{- toYaml $strategy | nindent 4 }}
+  selector:
+    matchLabels: {{- include "titan.selectorLabels" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "titan.labels" $ctx | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ $port | quote }}
+        prometheus.io/path: /metrics
+        # Roll the pods when shared configuration changes.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") $ | sha256sum }}
+    spec:
+      serviceAccountName: {{ $name }}
+      automountServiceAccountToken: {{ $.Values.serviceAccount.automountToken }}
+      terminationGracePeriodSeconds: {{ $.Values.defaults.terminationGracePeriodSeconds }}
+      {{- with $.Values.global.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml $.Values.podSecurityContext | nindent 8 }}
+        runAsUser: {{ include "titan.uid" $svc }}
+        runAsGroup: {{ include "titan.uid" $svc }}
+        fsGroup: {{ include "titan.uid" $svc }}
+      {{- if and $.Values.defaults.topologySpread.enabled (gt $replicas 1) }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: {{ $.Values.defaults.topologySpread.zoneKey }}
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: {{- include "titan.selectorLabels" $ctx | nindent 14 }}
+        - maxSkew: 1
+          topologyKey: {{ $.Values.defaults.topologySpread.hostKey }}
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: {{- include "titan.selectorLabels" $ctx | nindent 14 }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: {{ $.Values.defaults.topologySpread.hostKey }}
+                labelSelector:
+                  matchLabels: {{- include "titan.selectorLabels" $ctx | nindent 20 }}
+      {{- end }}
+      {{- if and $svc.database (eq $svc.runtime "node") }}
+      initContainers:
+        # Schema migrations run before the service starts, with the schema
+        # owner's credentials. The service itself only gets the runtime role.
+        - name: migrate
+          image: "{{ $.Values.global.imageRegistry }}/{{ $svc.image }}:{{ $.Values.global.imageTag }}"
+          imagePullPolicy: {{ $.Values.global.imagePullPolicy }}
+          command: ["node", "/repo/packages/platform/dist/migrate-cli.js", "migrations"]
+          env:
+            - name: SERVICE_NAME
+              value: {{ printf "%s-migrate" $name }}
+            - name: DB_APP_ROLE
+              value: {{ printf "%s_app" $short }}
+            - name: DATABASE_OWNER_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ printf "%s-db" $name }}
+                  key: DATABASE_OWNER_URL
+          securityContext: {{- toYaml $.Values.containerSecurityContext | nindent 12 }}
+          resources:
+            requests: { cpu: 50m, memory: 96Mi }
+            limits: { cpu: 500m, memory: 192Mi }
+      {{- end }}
+      containers:
+        - name: {{ $name }}
+          image: "{{ $.Values.global.imageRegistry }}/{{ $svc.image }}:{{ $.Values.global.imageTag }}"
+          imagePullPolicy: {{ $.Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $port }}
+              protocol: TCP
+          {{- if ne $svc.runtime "web" }}
+          envFrom:
+            - configMapRef:
+                name: titan-common
+          {{- end }}
+          env:
+            {{- if eq $svc.runtime "web" }}
+            - name: TITAN_GATEWAY_URL
+              value: {{ $.Values.global.apiUrl | quote }}
+            - name: TITAN_KEYCLOAK_URL
+              value: {{ $.Values.global.identityUrl | quote }}
+            - name: TITAN_ENVIRONMENT
+              value: {{ $.Values.global.environment | quote }}
+            {{- else }}
+            - name: SERVICE_NAME
+              value: {{ $name }}
+            {{- if eq $svc.runtime "python" }}
+            - name: PORT
+              value: "8000"
+            {{- end }}
+            {{- end }}
+            {{- if $svc.database }}
+            - name: DB_APP_ROLE
+              value: {{ printf "%s_app" $short }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ printf "%s-db" $name }}
+                  key: DATABASE_URL
+            {{- if eq $svc.runtime "python" }}
+            # Python services apply their own migrations at start.
+            - name: DATABASE_OWNER_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ printf "%s-db" $name }}
+                  key: DATABASE_OWNER_URL
+            - name: MIGRATE_ON_START
+              value: "true"
+            {{- else }}
+            - name: MIGRATE_ON_START
+              value: "false"
+            {{- end }}
+            {{- end }}
+            {{- if $svc.identitySecret }}
+            - name: SERVICE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ printf "%s-identity" $name }}
+                  key: SERVICE_CLIENT_SECRET
+            {{- end }}
+            {{- if $svc.usesMqtt }}
+            - name: MQTT_URL
+              value: {{ $.Values.global.mqtt.url | quote }}
+            - name: MQTT_USERNAME
+              valueFrom:
+                secretKeyRef: { name: telemetry-mqtt, key: MQTT_USERNAME }
+            - name: MQTT_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: telemetry-mqtt, key: MQTT_PASSWORD }
+            {{- end }}
+            {{- if $svc.lake }}
+            - name: LAKE_DIR
+              value: /lake
+            {{- end }}
+            {{- if eq $name "gateway" }}
+            - name: WEB_ORIGIN
+              value: {{ $.Values.global.publicUrl | quote }}
+            - name: TITAN_ENVIRONMENT
+              value: {{ $.Values.global.environment | quote }}
+            {{- end }}
+            {{- range $key, $value := $svc.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          # Liveness: is the process alive. Readiness: can it serve (database reachable).
+          startupProbe:
+            httpGet: { path: {{ ternary "/healthz" "/health/live" (eq $svc.runtime "web") }}, port: http }
+            periodSeconds: 3
+            failureThreshold: 40
+          livenessProbe:
+            httpGet: { path: {{ ternary "/healthz" "/health/live" (eq $svc.runtime "web") }}, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: { path: {{ ternary "/healthz" "/health/ready" (eq $svc.runtime "web") }}, port: http }
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              # Give the endpoint controller time to stop routing before shutdown begins.
+              exec:
+                command: ["sleep", "5"]
+          resources: {{- toYaml $resources | nindent 12 }}
+          securityContext: {{- toYaml $.Values.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            {{- if eq $svc.runtime "web" }}
+            - name: nginx-run
+              mountPath: /var/cache/nginx
+            - name: nginx-conf
+              mountPath: /etc/nginx/conf.d
+            - name: web-config
+              mountPath: /usr/share/nginx/html/config.js
+              subPath: config.js
+            {{- end }}
+            {{- if $svc.lake }}
+            - name: lake
+              mountPath: /lake
+              readOnly: {{ eq $svc.lake "readOnly" }}
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- if eq $svc.runtime "web" }}
+        - name: nginx-run
+          emptyDir: {}
+        - name: nginx-conf
+          emptyDir: {}
+        - name: web-config
+          configMap:
+            name: titan-web-config
+        {{- end }}
+        {{- if $svc.lake }}
+        - name: lake
+          persistentVolumeClaim:
+            claimName: {{ default "titan-lake" $.Values.lake.existingClaim }}
+        {{- end }}
+{{- if and $.Values.defaults.podDisruptionBudget.enabled (gt $replicas 1) }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}
+  labels: {{- include "titan.labels" $ctx | nindent 4 }}
+spec:
+  maxUnavailable: {{ $.Values.defaults.podDisruptionBudget.maxUnavailable }}
+  selector:
+    matchLabels: {{- include "titan.selectorLabels" $ctx | nindent 6 }}
+{{- end }}
+{{- if $autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $name }}
+  labels: {{- include "titan.labels" $ctx | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $name }}
+  minReplicas: {{ $autoscaling.minReplicas }}
+  maxReplicas: {{ $autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ $autoscaling.targetCPUUtilizationPercentage }}
+{{- end }}
+{{- end }}

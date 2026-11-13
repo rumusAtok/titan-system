@@ -1,0 +1,61 @@
+{
+  "name": "titan-platform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "TITAN - Total Intelligence, Technology, Automation & Network Platform (development release, not production-certified)",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "workspaces": [
+    "packages/contracts",
+    "packages/observability",
+    "packages/authentication",
+    "packages/platform",
+    "services/tenant-service",
+    "services/case-service",
+    "services/workflow-service",
+    "services/notification-service",
+    "services/audit-service",
+    "services/asset-service",
+    "services/device-service",
+    "services/telemetry-service",
+    "services/alert-service",
+    "services/incident-service",
+    "apps/gateway"
+  ],
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "clean": "tsc -b tsconfig.build.json --clean",
+    "typecheck": "tsc -b tsconfig.build.json",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "test:integration": "node --test --test-concurrency=1 \"tests/integration/*.test.ts\" \"tests/security/*.test.ts\" \"tests/contract/*.test.ts\"",
+    "seed": "node scripts/seed.mjs",
+    "simulate": "node scripts/sensor-simulator.mjs",
+    "openapi:export": "node scripts/export-openapi.mjs",
+    "test:unit:docker": "docker build -f infrastructure/docker/node-service.Dockerfile --target unit-test --progress=plain .",
+    "test:a": "node --test tests/integration/government-approval.test.ts",
+    "test:b": "node --test tests/integration/iot-incident.test.ts",
+    "test:c": "node --test tests/security/tenant-isolation.test.ts",
+    "test:d": "node --test tests/integration/event-recovery.test.ts",
+    "test:g": "node --test tests/integration/service-failure.test.ts",
+    "test:e": "node --test tests/integration/ai-safety.test.ts",
+    "test:analytics": "node --test tests/integration/analytics.test.ts",
+    "test:e2e": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-e2e.ps1",
+    "dr:backup": "node scripts/dr/backup.mjs",
+    "dr:restore-drill": "node scripts/dr/restore-drill.mjs",
+    "dr:failover-drill": "node scripts/dr/failover-drill.mjs",
+    "dr:failback": "node scripts/dr/failback.mjs"
+  },
+  "devDependencies": {
+    "@nats-io/jetstream": "3.4.0",
+    "@nats-io/transport-node": "3.4.0",
+    "@types/node": "26.6.6",
+    "@types/pg": "8.23.1",
+    "mqtt": "5.16.1",
+    "pg": "8.23.1",
+    "tsx": "4.23.15",
+    "typescript": "6.0.3",
+    "vitest": "5.1.0"
+  }
+}

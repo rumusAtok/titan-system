@@ -1,0 +1,445 @@
+{
+  "components": {
+    "schemas": {},
+    "securitySchemes": {
+      "bearer": {
+        "bearerFormat": "JWT",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "contact": {},
+    "description": "Versioned approval processes, role-based task assignment, delegations, decisions, SLA tracking and escalation.",
+    "title": "TITAN workflow-service",
+    "version": "0.1.0"
+  },
+  "openapi": "3.0.0",
+  "paths": {
+    "/definitions": {
+      "get": {
+        "operationId": "WorkflowController_listDefinitions",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "workflow"
+        ]
+      },
+      "post": {
+        "operationId": "WorkflowController_createDefinition",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "definition": {
+                    "properties": {
+                      "allow_return": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "applicant_notifications": {
+                        "default": [],
+                        "items": {
+                          "enum": [
+                            "submitted",
+                            "returned",
+                            "approved",
+                            "rejected"
+                          ],
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "stages": {
+                        "items": {
+                          "properties": {
+                            "condition": {
+                              "properties": {
+                                "field": {
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "op": {
+                                  "enum": [
+                                    "eq",
+                                    "ne",
+                                    "gt",
+                                    "gte",
+                                    "lt",
+                                    "lte",
+                                    "in"
+                                  ],
+                                  "type": "string"
+                                },
+                                "value": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "boolean"
+                                    },
+                                    {
+                                      "items": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "number"
+                                          }
+                                        ]
+                                      },
+                                      "type": "array"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "field",
+                                "op",
+                                "value"
+                              ],
+                              "type": "object"
+                            },
+                            "escalate_to_role": {
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "key": {
+                              "pattern": "^[a-z][a-z0-9_]{0,62}$",
+                              "type": "string"
+                            },
+                            "name": {
+                              "maxLength": 120,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "roles": {
+                              "items": {
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "maxItems": 10,
+                              "minItems": 1,
+                              "type": "array"
+                            },
+                            "sla_hours": {
+                              "exclusiveMinimum": true,
+                              "maximum": 8760,
+                              "minimum": 0,
+                              "type": "number"
+                            },
+                            "type": {
+                              "default": "single",
+                              "enum": [
+                                "single",
+                                "parallel"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "key",
+                            "name",
+                            "roles"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 30,
+                        "minItems": 1,
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "stages"
+                    ],
+                    "type": "object"
+                  },
+                  "key": {
+                    "pattern": "^[a-z0-9][a-z0-9-]{1,62}$",
+                    "type": "string"
+                  },
+                  "name": {
+                    "maxLength": 200,
+                    "minLength": 2,
+                    "type": "string"
+                  },
+                  "subject_type": {
+                    "enum": [
+                      "case",
+                      "incident"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "key",
+                  "name",
+                  "subject_type",
+                  "definition"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Publish a new version of a workflow definition",
+        "tags": [
+          "workflow"
+        ]
+      }
+    },
+    "/delegations": {
+      "get": {
+        "operationId": "WorkflowController_listDelegations",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "workflow"
+        ]
+      },
+      "post": {
+        "operationId": "WorkflowController_createDelegation",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "reason": {
+                    "maxLength": 500,
+                    "type": "string"
+                  },
+                  "role": {
+                    "maxLength": 64,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "to_username": {
+                    "maxLength": 255,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "valid_to": {
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "to_username",
+                  "role",
+                  "valid_to"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delegate one of your own roles to another user for a limited time",
+        "tags": [
+          "workflow"
+        ]
+      }
+    },
+    "/delegations/{id}": {
+      "delete": {
+        "operationId": "WorkflowController_revokeDelegation",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "workflow"
+        ]
+      }
+    },
+    "/instances/by-subject/{subjectType}/{subjectId}": {
+      "get": {
+        "operationId": "WorkflowController_bySubject",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Process state, planned stages, tasks and decision history for a case or incident",
+        "tags": [
+          "workflow"
+        ]
+      }
+    },
+    "/instances/{id}": {
+      "get": {
+        "operationId": "WorkflowController_getInstance",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "workflow"
+        ]
+      }
+    },
+    "/stats": {
+      "get": {
+        "operationId": "WorkflowController_stats",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "workflow"
+        ]
+      }
+    },
+    "/tasks": {
+      "get": {
+        "operationId": "WorkflowController_listTasks",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Review inbox: tasks for the caller's roles and active delegations",
+        "tags": [
+          "workflow"
+        ]
+      }
+    },
+    "/tasks/{id}/decision": {
+      "post": {
+        "description": "The caller must hold the role the task is assigned to, or an active delegation of it. A task can be decided once; send an Idempotency-Key header to make retries safe.",
+        "operationId": "WorkflowController_decide",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "comment": {
+                    "maxLength": 2000,
+                    "type": "string"
+                  },
+                  "decision": {
+                    "enum": [
+                      "approve",
+                      "reject",
+                      "return"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "decision"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Approve, reject or return a task",
+        "tags": [
+          "workflow"
+        ]
+      }
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    }
+  ],
+  "servers": [],
+  "tags": []
+}

@@ -1,0 +1,54 @@
+# PLANNED production topology. Values for the official NATS Helm chart
+# (https://github.com/nats-io/k8s). Not deployed or tested from this repository.
+#
+#   helm repo add nats https://nats-io.github.io/k8s/helm/charts/
+#   helm upgrade --install nats nats/nats -n titan-messaging -f nats-values.yaml
+#
+# Three servers form a JetStream cluster. With TITAN's NATS_STREAM_REPLICAS=3
+# every stream is replicated to all three (Raft quorum of 2): the event broker
+# survives the loss of one server or one zone without losing acknowledged events.
+config:
+  cluster:
+    enabled: true
+    replicas: 3
+  jetstream:
+    enabled: true
+    fileStore:
+      enabled: true
+      pvc:
+        enabled: true
+        size: 50Gi
+        storageClassName: fast-ssd
+    memoryStore:
+      enabled: false
+  merge:
+    max_payload: 2MB
+
+podTemplate:
+  topologySpreadConstraints:
+    topology.kubernetes.io/zone:
+      maxSkew: 1
+      whenUnsatisfiable: DoNotSchedule
+    kubernetes.io/hostname:
+      maxSkew: 1
+      whenUnsatisfiable: DoNotSchedule
+
+container:
+  merge:
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: "2"
+        memory: 2Gi
+
+podDisruptionBudget:
+  enabled: true
+
+promExporter:
+  enabled: true
+
+# Cross-region: JetStream streams are NOT stretched across regions. The DR
+# region runs its own 3-node cluster and mirrors the event stream
+# (see infrastructure/kubernetes/dr/README.md and the DR architecture document).

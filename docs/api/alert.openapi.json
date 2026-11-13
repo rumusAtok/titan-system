@@ -1,0 +1,285 @@
+{
+  "components": {
+    "schemas": {},
+    "securitySchemes": {
+      "bearer": {
+        "bearerFormat": "JWT",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "contact": {},
+    "description": "Threshold rules, alarm generation, deduplication, escalation and alert acknowledgment.",
+    "title": "TITAN alert-service",
+    "version": "0.1.0"
+  },
+  "openapi": "3.0.0",
+  "paths": {
+    "/alerts": {
+      "get": {
+        "operationId": "AlertController_listAlerts",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Alarm history; status=open returns active and acknowledged alarms",
+        "tags": [
+          "alerts"
+        ]
+      }
+    },
+    "/alerts/summary": {
+      "get": {
+        "operationId": "AlertController_summary",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "alerts"
+        ]
+      }
+    },
+    "/alerts/{id}": {
+      "get": {
+        "operationId": "AlertController_getAlert",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "alerts"
+        ]
+      }
+    },
+    "/alerts/{id}/acknowledge": {
+      "post": {
+        "operationId": "AlertController_acknowledge",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "alerts"
+        ]
+      }
+    },
+    "/rules": {
+      "get": {
+        "operationId": "AlertController_listRules",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "alerts"
+        ]
+      },
+      "post": {
+        "operationId": "AlertController_createRule",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "clear_threshold": {
+                    "default": null,
+                    "nullable": true,
+                    "type": "number"
+                  },
+                  "create_incident": {
+                    "default": true,
+                    "type": "boolean"
+                  },
+                  "device_id": {
+                    "default": null,
+                    "format": "uuid",
+                    "nullable": true,
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "type": "string"
+                  },
+                  "enabled": {
+                    "default": true,
+                    "type": "boolean"
+                  },
+                  "name": {
+                    "maxLength": 200,
+                    "minLength": 2,
+                    "type": "string"
+                  },
+                  "operator": {
+                    "enum": [
+                      "gt",
+                      "gte",
+                      "lt",
+                      "lte"
+                    ],
+                    "type": "string"
+                  },
+                  "sensor_kind": {
+                    "pattern": "^[a-z][a-z0-9_]{1,31}$",
+                    "type": "string"
+                  },
+                  "severity": {
+                    "enum": [
+                      "info",
+                      "warning",
+                      "critical"
+                    ],
+                    "type": "string"
+                  },
+                  "threshold": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "name",
+                  "sensor_kind",
+                  "operator",
+                  "threshold",
+                  "severity"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a threshold rule",
+        "tags": [
+          "alerts"
+        ]
+      }
+    },
+    "/rules/{id}": {
+      "patch": {
+        "operationId": "AlertController_updateRule",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "clear_threshold": {
+                    "nullable": true,
+                    "type": "number"
+                  },
+                  "create_incident": {
+                    "type": "boolean"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "expected_version": {
+                    "exclusiveMinimum": true,
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "name": {
+                    "maxLength": 200,
+                    "minLength": 2,
+                    "type": "string"
+                  },
+                  "operator": {
+                    "enum": [
+                      "gt",
+                      "gte",
+                      "lt",
+                      "lte"
+                    ],
+                    "type": "string"
+                  },
+                  "severity": {
+                    "enum": [
+                      "info",
+                      "warning",
+                      "critical"
+                    ],
+                    "type": "string"
+                  },
+                  "threshold": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "expected_version"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "alerts"
+        ]
+      }
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    }
+  ],
+  "servers": [],
+  "tags": []
+}

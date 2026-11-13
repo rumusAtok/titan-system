@@ -1,0 +1,802 @@
+{
+  "realm": "titan",
+  "displayName": "TITAN Platform (development realm)",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": false,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "failureFactor": 10,
+  "accessTokenLifespan": 900,
+  "ssoSessionIdleTimeout": 3600,
+  "ssoSessionMaxLifespan": 36000,
+  "otpPolicyType": "totp",
+  "otpPolicyAlgorithm": "HmacSHA1",
+  "otpPolicyDigits": 6,
+  "otpPolicyPeriod": 30,
+  "roles": {
+    "realm": [
+      {
+        "name": "applicant",
+        "description": "Member of the public who submits and tracks applications"
+      },
+      {
+        "name": "validation_officer",
+        "description": "Checks submitted applications for completeness"
+      },
+      {
+        "name": "technical_officer",
+        "description": "Performs the technical assessment of an application"
+      },
+      {
+        "name": "department_head",
+        "description": "Endorses applications on behalf of the department"
+      },
+      {
+        "name": "final_approver",
+        "description": "Issues the final decision on an application"
+      },
+      {
+        "name": "duty_officer",
+        "description": "Acknowledges and triages operational incidents"
+      },
+      {
+        "name": "incident_commander",
+        "description": "Directs incident response and resolves incidents"
+      },
+      {
+        "name": "asset_manager",
+        "description": "Maintains the infrastructure asset register"
+      },
+      {
+        "name": "iot_operator",
+        "description": "Manages IoT devices, alert rules and telemetry"
+      },
+      {
+        "name": "analyst",
+        "description": "Reads analytical datasets and reports"
+      },
+      {
+        "name": "auditor",
+        "description": "Reads audit records"
+      },
+      {
+        "name": "tenant_admin",
+        "description": "Administers one tenant (organisation)"
+      },
+      {
+        "name": "dr_operator",
+        "description": "Authorised to operate disaster-recovery controls"
+      },
+      {
+        "name": "platform_admin",
+        "description": "Administers the platform across tenants"
+      },
+      {
+        "name": "service",
+        "description": "Machine identity for service-to-service calls"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "titan-web",
+      "name": "TITAN web command center",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "rootUrl": "${TITAN_WEB_ORIGIN}",
+      "redirectUris": [
+        "${TITAN_WEB_ORIGIN}/*"
+      ],
+      "webOrigins": [
+        "${TITAN_WEB_ORIGIN}"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "${TITAN_WEB_ORIGIN}/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "tenant_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "tenant_id",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "department",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "department",
+            "claim.name": "department",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "titan-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "titan-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "titan-cli",
+      "name": "TITAN test and automation client",
+      "description": "DEVELOPMENT/TEST ONLY: allows the password grant for automated tests and seed scripts. Remove in production.",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "protocolMappers": [
+        {
+          "name": "tenant_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "tenant_id",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "department",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "department",
+            "claim.name": "department",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "titan-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "titan-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "svc-pipeline",
+      "name": "svc-pipeline",
+      "description": "data-pipeline-service machine identity",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${SVC_PIPELINE_CLIENT_SECRET}",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "protocolMappers": [
+        {
+          "name": "titan-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "titan-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "svc-ai",
+      "name": "svc-ai",
+      "description": "ai-gateway-service machine identity",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${SVC_AI_CLIENT_SECRET}",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "protocolMappers": [
+        {
+          "name": "titan-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "titan-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "alice.applicant",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Alice",
+      "lastName": "Applicant",
+      "email": "alice.applicant@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "11111111-1111-4111-8111-111111111111"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "applicant"
+      ]
+    },
+    {
+      "username": "aaron.applicant",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Aaron",
+      "lastName": "Applicant",
+      "email": "aaron.applicant@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "11111111-1111-4111-8111-111111111111"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "applicant"
+      ]
+    },
+    {
+      "username": "victor.validator",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Victor",
+      "lastName": "Validator",
+      "email": "victor.validator@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "11111111-1111-4111-8111-111111111111"
+        ],
+        "department": [
+          "PERMITS"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "validation_officer"
+      ]
+    },
+    {
+      "username": "tara.technical",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Tara",
+      "lastName": "Technical",
+      "email": "tara.technical@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "11111111-1111-4111-8111-111111111111"
+        ],
+        "department": [
+          "ENGINEERING"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "technical_officer"
+      ]
+    },
+    {
+      "username": "henry.head",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Henry",
+      "lastName": "Head",
+      "email": "henry.head@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "11111111-1111-4111-8111-111111111111"
+        ],
+        "department": [
+          "ENGINEERING"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "department_head"
+      ]
+    },
+    {
+      "username": "fiona.final",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Fiona",
+      "lastName": "Final",
+      "email": "fiona.final@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "11111111-1111-4111-8111-111111111111"
+        ],
+        "department": [
+          "EXECUTIVE"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "final_approver"
+      ]
+    },
+    {
+      "username": "derek.duty",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Derek",
+      "lastName": "Duty",
+      "email": "derek.duty@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "11111111-1111-4111-8111-111111111111"
+        ],
+        "department": [
+          "OPERATIONS"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "duty_officer",
+        "iot_operator"
+      ]
+    },
+    {
+      "username": "irene.commander",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Irene",
+      "lastName": "Commander",
+      "email": "irene.commander@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "11111111-1111-4111-8111-111111111111"
+        ],
+        "department": [
+          "OPERATIONS"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "incident_commander",
+        "iot_operator"
+      ]
+    },
+    {
+      "username": "amy.assets",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Amy",
+      "lastName": "Assets",
+      "email": "amy.assets@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "11111111-1111-4111-8111-111111111111"
+        ],
+        "department": [
+          "ENGINEERING"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "asset_manager"
+      ]
+    },
+    {
+      "username": "anna.analyst",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Anna",
+      "lastName": "Analyst",
+      "email": "anna.analyst@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "11111111-1111-4111-8111-111111111111"
+        ],
+        "department": [
+          "EXECUTIVE"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "analyst"
+      ]
+    },
+    {
+      "username": "oscar.auditor",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Oscar",
+      "lastName": "Auditor",
+      "email": "oscar.auditor@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "11111111-1111-4111-8111-111111111111"
+        ],
+        "department": [
+          "EXECUTIVE"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "auditor"
+      ]
+    },
+    {
+      "username": "adam.admin",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Adam",
+      "lastName": "Admin",
+      "email": "adam.admin@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "11111111-1111-4111-8111-111111111111"
+        ],
+        "department": [
+          "EXECUTIVE"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "tenant_admin",
+        "asset_manager",
+        "iot_operator",
+        "analyst",
+        "auditor"
+      ]
+    },
+    {
+      "username": "bob.applicant",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Bob",
+      "lastName": "Applicant",
+      "email": "bob.applicant@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "22222222-2222-4222-8222-222222222222"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "applicant"
+      ]
+    },
+    {
+      "username": "vera.validator",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Vera",
+      "lastName": "Validator",
+      "email": "vera.validator@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "22222222-2222-4222-8222-222222222222"
+        ],
+        "department": [
+          "PERMITS"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "validation_officer"
+      ]
+    },
+    {
+      "username": "tom.technical",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Tom",
+      "lastName": "Technical",
+      "email": "tom.technical@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "22222222-2222-4222-8222-222222222222"
+        ],
+        "department": [
+          "ENGINEERING"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "technical_officer"
+      ]
+    },
+    {
+      "username": "hana.head",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Hana",
+      "lastName": "Head",
+      "email": "hana.head@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "22222222-2222-4222-8222-222222222222"
+        ],
+        "department": [
+          "ENGINEERING"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "department_head"
+      ]
+    },
+    {
+      "username": "frank.final",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Frank",
+      "lastName": "Final",
+      "email": "frank.final@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "22222222-2222-4222-8222-222222222222"
+        ],
+        "department": [
+          "EXECUTIVE"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "final_approver"
+      ]
+    },
+    {
+      "username": "dana.duty",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Dana",
+      "lastName": "Duty",
+      "email": "dana.duty@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "22222222-2222-4222-8222-222222222222"
+        ],
+        "department": [
+          "OPERATIONS"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "duty_officer",
+        "iot_operator"
+      ]
+    },
+    {
+      "username": "brian.admin",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Brian",
+      "lastName": "Admin",
+      "email": "brian.admin@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "22222222-2222-4222-8222-222222222222"
+        ],
+        "department": [
+          "EXECUTIVE"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "tenant_admin",
+        "asset_manager",
+        "iot_operator",
+        "analyst",
+        "auditor"
+      ]
+    },
+    {
+      "username": "pat.platform",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Pat",
+      "lastName": "Platform",
+      "email": "pat.platform@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "00000000-0000-0000-0000-000000000000"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "platform_admin",
+        "dr_operator"
+      ]
+    },
+    {
+      "username": "service-account-svc-pipeline",
+      "enabled": true,
+      "serviceAccountClientId": "svc-pipeline",
+      "realmRoles": [
+        "service"
+      ]
+    },
+    {
+      "username": "service-account-svc-ai",
+      "enabled": true,
+      "serviceAccountClientId": "svc-ai",
+      "realmRoles": [
+        "service"
+      ]
+    }
+  ],
+  "components": {
+    "org.keycloak.userprofile.UserProfileProvider": [
+      {
+        "providerId": "declarative-user-profile",
+        "config": {
+          "kc.user.profile.config": [
+            "{\"attributes\":[{\"name\":\"username\",\"displayName\":\"Username\",\"validations\":{\"length\":{\"min\":3,\"max\":255},\"username-prohibited-characters\":{},\"up-username-not-idn-homograph\":{}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]}},{\"name\":\"email\",\"displayName\":\"Email\",\"validations\":{\"email\":{},\"length\":{\"max\":255}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]}},{\"name\":\"firstName\",\"displayName\":\"First name\",\"validations\":{\"length\":{\"max\":255}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"lastName\",\"displayName\":\"Last name\",\"validations\":{\"length\":{\"max\":255}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"tenant_id\",\"displayName\":\"Tenant ID\",\"validations\":{\"length\":{\"min\":36,\"max\":36}},\"permissions\":{\"view\":[\"admin\"],\"edit\":[\"admin\"]}},{\"name\":\"department\",\"displayName\":\"Department\",\"validations\":{\"length\":{\"max\":64}},\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\"]}}],\"groups\":[{\"name\":\"user-metadata\",\"displayHeader\":\"User metadata\",\"displayDescription\":\"Attributes which refer to user metadata\"}]}"
+          ]
+        }
+      }
+    ]
+  }
+}

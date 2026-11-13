@@ -1,0 +1,108 @@
+{
+  "uid": "titan-overview",
+  "title": "TITAN platform overview",
+  "tags": ["titan"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "15s",
+  "time": { "from": "now-30m", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Services up",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "titan-prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum(up{job=~\"titan-.*\"})" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 11 }] } }, "overrides": [] }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Services down",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "titan-prometheus" },
+      "targets": [{ "refId": "A", "expr": "count(up{job=~\"titan-.*\"} == 0) or vector(0)" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }, "overrides": [] }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Unpublished events (outbox)",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "titan-prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum(titan_outbox_pending)" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 100 }, { "color": "red", "value": 500 }] } }, "overrides": [] }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Dead-lettered events (1 h)",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "titan-prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum(increase(titan_events_consumed_total{outcome=~\"dead_letter|invalid\"}[1h])) or vector(0)" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "fieldConfig": { "defaults": { "decimals": 0, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }, "overrides": [] }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Requests per second by service",
+      "gridPos": { "x": 0, "y": 5, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "titan-prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum by (service) (rate(titan_http_request_duration_seconds_count[1m]))", "legendFormat": "{{service}}" }],
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "95th percentile latency by service",
+      "gridPos": { "x": 12, "y": 5, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "titan-prometheus" },
+      "targets": [{ "refId": "A", "expr": "histogram_quantile(0.95, sum by (service, le) (rate(titan_http_request_duration_seconds_bucket[5m])))", "legendFormat": "{{service}}" }],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Server errors per second (5xx)",
+      "gridPos": { "x": 0, "y": 13, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "titan-prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum by (service) (rate(titan_http_request_duration_seconds_count{status=~\"5..\"}[1m]))", "legendFormat": "{{service}}" }],
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Events handled per second by outcome",
+      "gridPos": { "x": 12, "y": 13, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "titan-prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum by (service, outcome) (rate(titan_events_consumed_total[1m]))", "legendFormat": "{{service}} {{outcome}}" }],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Telemetry messages per second by outcome",
+      "gridPos": { "x": 0, "y": 21, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "titan-prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum by (outcome) (rate(titan_telemetry_messages_total[1m]))", "legendFormat": "{{outcome}}" }],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    },
+    {
+      "id": 10,
+      "type": "logs",
+      "title": "Errors and warnings (all services)",
+      "gridPos": { "x": 12, "y": 21, "w": 12, "h": 8 },
+      "datasource": { "type": "loki", "uid": "titan-loki" },
+      "targets": [{ "refId": "A", "expr": "{service=~\".+\"} |~ \"\\\"level\\\": ?\\\"(error|warn|warning)\\\"\"" }],
+      "options": { "showTime": true, "wrapLogMessage": true, "sortOrder": "Descending" }
+    }
+  ]
+}

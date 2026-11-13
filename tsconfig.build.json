@@ -1,0 +1,20 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/contracts" },
+    { "path": "packages/observability" },
+    { "path": "packages/authentication" },
+    { "path": "packages/platform" },
+    { "path": "services/tenant-service" },
+    { "path": "services/case-service" },
+    { "path": "services/workflow-service" },
+    { "path": "services/notification-service" },
+    { "path": "services/audit-service" },
+    { "path": "services/asset-service" },
+    { "path": "services/device-service" },
+    { "path": "services/telemetry-service" },
+    { "path": "services/alert-service" },
+    { "path": "services/incident-service" },
+    { "path": "apps/gateway" }
+  ]
+}

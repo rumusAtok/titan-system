@@ -1,0 +1,124 @@
+{{- if .Values.networkPolicy.enabled }}
+# Default: nothing may talk to anything. Every allowed path is listed below.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: titan-default-deny
+  labels:
+    app.kubernetes.io/part-of: titan
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: titan
+  policyTypes: [Ingress, Egress]
+---
+# Every workload may resolve names.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: titan-allow-dns
+  labels:
+    app.kubernetes.io/part-of: titan
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: titan
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+{{- range $name, $svc := .Values.services }}
+{{- $port := include "titan.port" $svc | int }}
+{{- $ctx := dict "root" $ "name" $name "svc" $svc }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}
+  labels: {{- include "titan.labels" $ctx | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "titan.selectorLabels" $ctx | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    {{- if $svc.exposed }}
+    # Public entry point: reachable only through the ingress controller.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $.Values.networkPolicy.ingressControllerNamespace }}
+      ports:
+        - { protocol: TCP, port: {{ $port }} }
+    {{- else }}
+    # Internal service: reachable from the gateway and its declared callers only.
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: gateway
+        {{- range $caller := $svc.callers }}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ $caller }}
+        {{- end }}
+      ports:
+        - { protocol: TCP, port: {{ $port }} }
+    {{- end }}
+    # Metrics scraping.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $.Values.networkPolicy.monitoringNamespace }}
+      ports:
+        - { protocol: TCP, port: {{ $port }} }
+  egress:
+    {{- if eq $name "gateway" }}
+    # The gateway calls every service.
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: titan
+    {{- end }}
+    {{- range $target, $other := $.Values.services }}
+    {{- if has $name (default list $other.callers) }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ $target }}
+      ports:
+        - { protocol: TCP, port: {{ include "titan.port" $other | int }} }
+    {{- end }}
+    {{- end }}
+    {{- if $svc.database }}
+    # Its own database (credentials restrict it to its own schema).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $.Values.networkPolicy.dataNamespace }}
+      ports:
+        - { protocol: TCP, port: {{ $.Values.global.database.port }} }
+    {{- end }}
+    {{- if ne $svc.runtime "web" }}
+    # Event broker (and MQTT for telemetry) and the identity provider key endpoint.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $.Values.networkPolicy.messagingNamespace }}
+      ports:
+        - { protocol: TCP, port: 4222 }
+        {{- if $svc.usesMqtt }}
+        - { protocol: TCP, port: 8883 }
+        {{- end }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $.Values.networkPolicy.identityNamespace }}
+      ports:
+        - { protocol: TCP, port: 8080 }
+    {{- end }}
+{{- end }}
+{{- end }}

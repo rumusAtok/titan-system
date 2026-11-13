@@ -1,0 +1,71 @@
+# PLANNED production topology (DR region, warm standby). Schema-validated, NOT
+# deployed or tested from this repository.
+#
+# A CloudNativePG *replica cluster* in a geographically separate region. It
+# continuously replays the WAL of the primary region, read from the primary
+# region's object storage (and optionally by streaming). It accepts no writes
+# until an operator promotes it, following docs/runbooks/failover-and-failback.md.
+#
+# Promotion is a deliberate manual change: set spec.replica.enabled to false
+# (through Git, reviewed) ONLY after the primary region has been fenced.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: titan-pg-dr
+  namespace: titan-data
+spec:
+  instances: 2
+  imageName: ghcr.io/cloudnative-pg/postgresql:17
+
+  replica:
+    enabled: true
+    source: titan-pg-primary-region
+
+  bootstrap:
+    recovery:
+      source: titan-pg-primary-region
+
+  externalClusters:
+    - name: titan-pg-primary-region
+      # WAL shipping through object storage: works even when the regions
+      # cannot reach each other directly.
+      barmanObjectStore:
+        destinationPath: s3://titan-pg-backups-primary/titan-pg
+        s3Credentials:
+          accessKeyId:
+            name: pg-backup-credentials-primary-readonly
+            key: ACCESS_KEY_ID
+          secretAccessKey:
+            name: pg-backup-credentials-primary-readonly
+            key: SECRET_ACCESS_KEY
+        wal:
+          maxParallel: 4
+
+  affinity:
+    enablePodAntiAffinity: true
+    podAntiAffinityType: required
+    topologyKey: kubernetes.io/hostname
+
+  storage:
+    size: 200Gi
+    storageClass: fast-ssd
+  walStorage:
+    size: 50Gi
+    storageClass: fast-ssd
+
+  # After promotion this region archives to ITS OWN bucket, so the two
+  # regions never write to the same backup location.
+  backup:
+    retentionPolicy: 30d
+    barmanObjectStore:
+      destinationPath: s3://titan-pg-backups-dr/titan-pg-dr
+      s3Credentials:
+        accessKeyId:
+          name: pg-backup-credentials
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: pg-backup-credentials
+          key: SECRET_ACCESS_KEY
+      wal:
+        compression: gzip
+        encryption: AES256

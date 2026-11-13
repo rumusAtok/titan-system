@@ -1,0 +1,11 @@
+apiVersion: v2
+name: titan
+description: >-
+  TITAN platform services (API gateway, web command center and the business
+  microservices). PostgreSQL (CloudNativePG), NATS JetStream, Keycloak and the
+  MQTT broker are platform dependencies installed separately; see
+  infrastructure/kubernetes/platform.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.29.0-0"

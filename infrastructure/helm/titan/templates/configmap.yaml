@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: titan-common
+  labels:
+    app.kubernetes.io/part-of: titan
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  NODE_ENV: production
+  LOG_LEVEL: info
+  NATS_URL: {{ .Values.global.nats.url | quote }}
+  NATS_STREAM_REPLICAS: {{ .Values.global.nats.streamReplicas | quote }}
+  OIDC_ISSUER: {{ .Values.global.oidc.issuer | quote }}
+  OIDC_JWKS_URI: {{ .Values.global.oidc.jwksUri | quote }}
+  OIDC_TOKEN_URL: {{ .Values.global.oidc.tokenUrl | quote }}
+  OIDC_AUDIENCE: {{ .Values.global.oidc.audience | quote }}
+  UV_THREADPOOL_SIZE: "32"
+---
+# Browser runtime configuration (public values only).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: titan-web-config
+  labels:
+    app.kubernetes.io/part-of: titan
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  config.js: |
+    window.__TITAN_CONFIG__ = {
+      gatewayUrl: {{ .Values.global.apiUrl | quote }},
+      keycloakUrl: {{ .Values.global.identityUrl | quote }},
+      realm: "titan",
+      clientId: "titan-web",
+      environment: {{ .Values.global.environment | quote }},
+      mapTileUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    };

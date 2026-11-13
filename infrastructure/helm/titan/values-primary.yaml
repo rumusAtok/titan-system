@@ -1,0 +1,3 @@
+# Primary region: full capacity, serving traffic.
+global:
+  environment: production-primary

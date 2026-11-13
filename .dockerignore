@@ -1,0 +1,13 @@
+**/node_modules
+**/dist
+**/.next
+**/*.tsbuildinfo
+**/__pycache__
+**/.venv
+.git
+.env
+docs
+tests
+infrastructure/disaster-recovery/backups
+infrastructure/disaster-recovery/work
+.tools

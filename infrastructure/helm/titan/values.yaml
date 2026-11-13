@@ -1,0 +1,277 @@
+# TITAN Helm chart values.
+#
+# STATUS: this chart renders and passes schema validation (see
+# docs/testing/verification-report.md). It has NOT been deployed to a cluster
+# from this repository. Treat it as the starting point for a deployment, not
+# as a proven production configuration.
+
+global:
+  imageRegistry: registry.example.internal/titan
+  imageTag: "0.1.0"
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets: []
+  environment: production
+
+  # Public URLs (through the ingress).
+  publicUrl: https://titan.example.gov
+  apiUrl: https://api.titan.example.gov
+  identityUrl: https://id.titan.example.gov
+
+  oidc:
+    # Token issuer as seen by browsers, and the in-cluster key endpoint.
+    issuer: https://id.titan.example.gov/realms/titan
+    jwksUri: http://keycloak.titan-identity.svc:8080/realms/titan/protocol/openid-connect/certs
+    tokenUrl: http://keycloak.titan-identity.svc:8080/realms/titan/protocol/openid-connect/token
+    audience: titan-api
+
+  nats:
+    url: nats://nats.titan-messaging.svc:4222
+    # JetStream replication factor for the event streams (quorum of 3).
+    streamReplicas: 3
+
+  mqtt:
+    url: mqtts://mosquitto.titan-messaging.svc:8883
+
+  # Database host: the read-write service of the CloudNativePG cluster.
+  database:
+    host: titan-pg-rw.titan-data.svc
+    port: 5432
+
+# Secrets are never created from values. Each workload reads Kubernetes
+# Secrets that must already exist, normally synchronised from a secret manager
+# by External Secrets Operator (enable below) or created by the DBA.
+#   <service>-db        keys: DATABASE_URL, DATABASE_OWNER_URL
+#   <service>-identity  keys: SERVICE_CLIENT_SECRET          (pipeline, ai)
+#   telemetry-mqtt      keys: MQTT_USERNAME, MQTT_PASSWORD
+externalSecrets:
+  enabled: false
+  secretStoreRef:
+    name: titan-secret-store
+    kind: ClusterSecretStore
+  refreshInterval: 1h
+  # Path prefix in the secret manager, e.g. titan/production/<secret name>.
+  pathPrefix: titan/production
+
+serviceAccount:
+  # Workloads do not call the Kubernetes API: no token is mounted.
+  automountToken: false
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+# Defaults applied to every workload unless it overrides them.
+defaults:
+  replicas: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 192Mi
+    limits:
+      cpu: "1"
+      memory: 384Mi
+  # Rolling update that never removes capacity before new capacity is ready.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  # Applied to workloads with 2 or more replicas.
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+  # Spread replicas over zones and nodes so one failure cannot take all of them.
+  topologySpread:
+    enabled: true
+    zoneKey: topology.kubernetes.io/zone
+    hostKey: kubernetes.io/hostname
+  terminationGracePeriodSeconds: 30
+  migrateOnStart: false
+
+networkPolicy:
+  enabled: true
+  # Namespaces allowed to reach the workloads.
+  ingressControllerNamespace: ingress-nginx
+  monitoringNamespace: titan-observability
+  # Namespaces of platform dependencies the workloads may call.
+  dataNamespace: titan-data
+  messagingNamespace: titan-messaging
+  identityNamespace: titan-identity
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-production
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: 8m
+  web:
+    host: titan.example.gov
+    tlsSecretName: titan-web-tls
+  api:
+    host: api.titan.example.gov
+    tlsSecretName: titan-api-tls
+
+serviceMonitor:
+  # Requires the Prometheus Operator CRDs.
+  enabled: false
+  interval: 30s
+
+# -----------------------------------------------------------------------------
+# Workloads. `runtime` selects the container conventions:
+#   node    NestJS service image, port 3000, runs as uid 1000
+#   python  FastAPI service image, port 8000, runs as uid 10001
+#   web     static site on unprivileged nginx, port 8080, runs as uid 101
+# `database` is the service-owned database name (omit for none).
+# `callers` lists the workloads allowed to connect, in addition to the gateway.
+# -----------------------------------------------------------------------------
+services:
+  gateway:
+    runtime: node
+    image: gateway
+    critical: true
+    replicas: 3
+    exposed: api
+    env:
+      RATE_LIMIT_PER_MINUTE: "600"
+    autoscaling:
+      enabled: true
+      minReplicas: 3
+      maxReplicas: 10
+
+  web:
+    runtime: web
+    image: web
+    critical: true
+    exposed: web
+    usesEvents: false
+    resources:
+      requests: { cpu: 25m, memory: 32Mi }
+      limits: { cpu: 250m, memory: 96Mi }
+
+  tenant-service:
+    runtime: node
+    image: tenant-service
+    critical: true
+    database: titan_tenant
+
+  case-service:
+    runtime: node
+    image: case-service
+    critical: true
+    database: titan_case
+
+  workflow-service:
+    runtime: node
+    image: workflow-service
+    critical: true
+    database: titan_workflow
+
+  notification-service:
+    runtime: node
+    image: notification-service
+    database: titan_notification
+    env:
+      EMAIL_ADAPTER: log
+
+  audit-service:
+    runtime: node
+    image: audit-service
+    database: titan_audit
+
+  asset-service:
+    runtime: node
+    image: asset-service
+    database: titan_asset
+
+  incident-service:
+    runtime: node
+    image: incident-service
+    critical: true
+    database: titan_incident
+    callers: [ai-gateway-service]
+
+  device-service:
+    runtime: node
+    image: device-service
+    critical: true
+    database: titan_device
+
+  telemetry-service:
+    runtime: node
+    image: telemetry-service
+    critical: true
+    database: titan_telemetry
+    usesMqtt: true
+    callers: [ai-gateway-service]
+    # One MQTT session per replica needs a shared subscription; until that is
+    # implemented this service runs as a single replica (see the risk register).
+    replicas: 1
+    strategy:
+      type: Recreate
+
+  alert-service:
+    runtime: node
+    image: alert-service
+    critical: true
+    database: titan_alert
+
+  analytics-service:
+    runtime: python
+    image: analytics-service
+    database: titan_analytics
+    lake: readOnly
+    callers: [data-pipeline-service, ai-gateway-service]
+
+  data-pipeline-service:
+    runtime: python
+    image: data-pipeline-service
+    database: titan_pipeline
+    lake: readWrite
+    identitySecret: true
+    # One writer to the lake at a time.
+    replicas: 1
+    strategy:
+      type: Recreate
+    resources:
+      requests: { cpu: 200m, memory: 512Mi }
+      limits: { cpu: "2", memory: 1Gi }
+    env:
+      SERVICE_CLIENT_ID: svc-pipeline
+      PIPELINE_INTERVAL_SECONDS: "60"
+      PIPELINE_ALLOW_FAULT_INJECTION: "false"
+      ANALYTICS_URL: http://analytics-service:8000
+
+  ai-gateway-service:
+    runtime: python
+    image: ai-gateway-service
+    database: titan_ai
+    identitySecret: true
+    env:
+      SERVICE_CLIENT_ID: svc-ai
+      AI_ENABLED: "false"
+      OLLAMA_BASE_URL: http://ollama.titan-ai.svc:11434
+      ANALYTICS_URL: http://analytics-service:8000
+      INCIDENT_URL: http://incident-service:3000
+      TELEMETRY_URL: http://telemetry-service:3000
+      WORKFLOW_URL: http://workflow-service:3000
+
+# Analytical lake (bronze/silver/gold Parquet). ReadWriteMany storage, or
+# replace with object storage (see docs/architecture/data-engineering.md).
+lake:
+  existingClaim: ""
+  storageClassName: ""
+  accessMode: ReadWriteMany
+  size: 20Gi

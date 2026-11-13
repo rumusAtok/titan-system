@@ -1,0 +1,122 @@
+{
+  "drill_id": "failback-20261113T071450Z",
+  "type": "failback",
+  "started_at": "2026-11-13T07:14:50.045Z",
+  "finished_at": "2026-11-13T07:16:11.982Z",
+  "result": "passed",
+  "environment": {
+    "topology": "single-host laboratory (docker compose); primary and recovery databases are containers on one machine",
+    "disclaimer": "Demonstrates the recovery procedure. NOT geographic disaster recovery and NOT evidence of production recovery times.",
+    "data": "synthetic"
+  },
+  "objectives": {
+    "rto_seconds": null,
+    "rpo_seconds": 0,
+    "note": "Planned operation: no data loss is acceptable; the outage is a maintenance window."
+  },
+  "observed": {
+    "rto_seconds": 79.6,
+    "rpo_seconds": 0,
+    "data_loss_transactions": 0
+  },
+  "summary": "Controlled failback completed with a planned outage of 79.6 s and no data loss. Original primary is primary again; the recovery database is a streaming standby.",
+  "steps": [
+    {
+      "name": "Check preconditions: recovery database is the acting primary",
+      "started_at": "2026-11-13T07:14:50.046Z",
+      "duration_ms": 744,
+      "status": "passed",
+      "detail": "17 application services are running on the recovery database"
+    },
+    {
+      "name": "Record a transaction on the recovery site (must survive the failback)",
+      "started_at": "2026-11-13T07:14:50.790Z",
+      "duration_ms": 735,
+      "status": "passed",
+      "detail": "approved APP-2026-000040"
+    },
+    {
+      "name": "Stop application services (planned outage begins)",
+      "started_at": "2026-11-13T07:14:51.526Z",
+      "duration_ms": 3506,
+      "status": "passed",
+      "detail": "17 services stopped"
+    },
+    {
+      "name": "Record the final write position of the recovery database",
+      "started_at": "2026-11-13T07:14:55.032Z",
+      "duration_ms": 618,
+      "status": "passed",
+      "detail": "2/6E74F3D0"
+    },
+    {
+      "name": "Rebuild the original primary as a standby of the recovery database",
+      "started_at": "2026-11-13T07:14:55.650Z",
+      "duration_ms": 17137,
+      "status": "passed",
+      "detail": "cloned with pg_basebackup and streaming"
+    },
+    {
+      "name": "Wait until the original primary has replayed every change",
+      "started_at": "2026-11-13T07:15:12.787Z",
+      "duration_ms": 381,
+      "status": "passed",
+      "detail": "replayed 2/70000060 (needed 2/6E74F3D0)"
+    },
+    {
+      "name": "Promote the original primary and retire the recovery database from the primary role",
+      "started_at": "2026-11-13T07:15:13.168Z",
+      "duration_ms": 10162,
+      "status": "passed",
+      "detail": "original primary promoted; recovery database stopped"
+    },
+    {
+      "name": "Rebuild the recovery database as a standby of the original primary",
+      "started_at": "2026-11-13T07:15:23.330Z",
+      "duration_ms": 23485,
+      "status": "passed",
+      "detail": "recovery database is a streaming standby again"
+    },
+    {
+      "name": "Start application services against the original primary",
+      "started_at": "2026-11-13T07:15:46.815Z",
+      "duration_ms": 24289,
+      "status": "passed",
+      "detail": "17 services ready"
+    },
+    {
+      "name": "Validate: nothing was lost and the platform works",
+      "started_at": "2026-11-13T07:16:11.104Z",
+      "duration_ms": 877,
+      "status": "passed",
+      "detail": "pre-failback transaction present; new application APP-2026-000041 approved end to end"
+    }
+  ],
+  "evidence": {
+    "transaction_before_failback": {
+      "id": "57c9bf6a-66e1-4c06-bdb0-8b415d08aedd",
+      "reference_no": "APP-2026-000040",
+      "created_at": "2026-11-13T07:14:50.932Z"
+    },
+    "operator_confirmation": {
+      "given": true,
+      "at": "2026-11-13T07:14:51.526Z"
+    },
+    "final_lsn_on_recovery": "2/6E74F3D0",
+    "replayed_lsn_on_original_primary": "2/70000060",
+    "post_failback_transaction": {
+      "id": "db2ed725-3430-4dee-a878-3533601faffd",
+      "reference_no": "APP-2026-000041",
+      "created_at": "2026-11-13T07:16:11.201Z"
+    },
+    "timing": {
+      "outage_started_at": "2026-11-13T07:14:51.526Z",
+      "services_ready_at": "2026-11-13T07:16:11.104Z",
+      "explanation": "Planned outage: from stopping the services to all services ready on the original primary."
+    }
+  },
+  "limitations": [
+    "Both nodes were re-cloned with pg_basebackup, which is practical only for small databases; production would use pg_rewind or a planned switchover of a healthy replica.",
+    "Single host: no cross-site transfer time is included."
+  ]
+}

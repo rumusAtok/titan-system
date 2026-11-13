@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts"],
+  "references": [
+    { "path": "../../packages/contracts" },
+    { "path": "../../packages/observability" },
+    { "path": "../../packages/authentication" },
+    { "path": "../../packages/platform" }
+  ]
+}

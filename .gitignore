@@ -1,0 +1,22 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.next/
+out/
+coverage/
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+*.log
+# generated runtime artefacts
+infrastructure/disaster-recovery/backups/
+infrastructure/disaster-recovery/work/
+tests/e2e/test-results/
+tests/e2e/playwright-report/
+playwright-report/
+test-results/
+.tools/

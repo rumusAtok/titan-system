@@ -1,0 +1,47 @@
+# Prometheus for the local TITAN stack (profile: observability).
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  - job_name: titan-node-services
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - gateway:3000
+          - tenant-service:3000
+          - case-service:3000
+          - workflow-service:3000
+          - notification-service:3000
+          - audit-service:3000
+          - asset-service:3000
+          - incident-service:3000
+          - device-service:3000
+          - telemetry-service:3000
+          - alert-service:3000
+    relabel_configs: &service-label
+      - source_labels: [__address__]
+        regex: "([^:]+):.*"
+        target_label: service
+
+  - job_name: titan-python-services
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - analytics-service:8000
+          - data-pipeline-service:8000
+          - ai-gateway-service:8000
+    relabel_configs: *service-label
+
+  - job_name: keycloak
+    metrics_path: /metrics
+    static_configs:
+      - targets: [keycloak:9000]
+    relabel_configs: *service-label
+
+  - job_name: prometheus
+    static_configs:
+      - targets: [localhost:9090]

@@ -1,0 +1,41 @@
+# Rendered by the nginx image's envsubst step at container start.
+server {
+  listen 8080;
+  server_name _;
+  root /usr/share/nginx/html;
+  index index.html;
+  server_tokens off;
+
+  # The application may only talk to the API gateway, the identity provider
+  # and the map tile server. 'unsafe-inline' is required by the inline
+  # bootstrap scripts of a static Next.js export (see the security risk register).
+  add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: ${TITAN_MAP_TILE_ORIGIN}; connect-src 'self' ${TITAN_GATEWAY_URL} ${TITAN_KEYCLOAK_URL} ${TITAN_MAP_TILE_ORIGIN}; worker-src 'self' blob:; child-src blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self' ${TITAN_KEYCLOAK_URL}" always;
+  add_header X-Content-Type-Options "nosniff" always;
+  add_header X-Frame-Options "DENY" always;
+  add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+  add_header Permissions-Policy "geolocation=(), camera=(), microphone=()" always;
+
+  location = /healthz {
+    access_log off;
+    default_type text/plain;
+    return 200 "ok\n";
+  }
+
+  # Never cache the runtime configuration or HTML; hashed assets are immutable.
+  location = /config.js {
+    add_header Cache-Control "no-store" always;
+  }
+  location /_next/static/ {
+    add_header Cache-Control "public, max-age=31536000, immutable" always;
+    add_header X-Content-Type-Options "nosniff" always;
+  }
+  location / {
+    add_header Cache-Control "no-cache" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: ${TITAN_MAP_TILE_ORIGIN}; connect-src 'self' ${TITAN_GATEWAY_URL} ${TITAN_KEYCLOAK_URL} ${TITAN_MAP_TILE_ORIGIN}; worker-src 'self' blob:; child-src blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self' ${TITAN_KEYCLOAK_URL}" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    try_files $uri $uri/ $uri/index.html =404;
+  }
+  error_page 404 /404.html;
+}

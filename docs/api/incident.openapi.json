@@ -1,0 +1,250 @@
+{
+  "components": {
+    "schemas": {},
+    "securitySchemes": {
+      "bearer": {
+        "bearerFormat": "JWT",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "contact": {},
+    "description": "Incident lifecycle, severity, assignment and closure. Acknowledgment and resolution are applied from the incident-response workflow.",
+    "title": "TITAN incident-service",
+    "version": "0.1.0"
+  },
+  "openapi": "3.0.0",
+  "paths": {
+    "/incidents": {
+      "get": {
+        "operationId": "IncidentController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List incidents; status=active returns open and acknowledged incidents",
+        "tags": [
+          "incidents"
+        ]
+      },
+      "post": {
+        "operationId": "IncidentController_create",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "description": {
+                    "default": "",
+                    "maxLength": 4000,
+                    "type": "string"
+                  },
+                  "device_id": {
+                    "default": null,
+                    "format": "uuid",
+                    "nullable": true,
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "type": "string"
+                  },
+                  "severity": {
+                    "enum": [
+                      "info",
+                      "warning",
+                      "critical"
+                    ],
+                    "type": "string"
+                  },
+                  "title": {
+                    "maxLength": 200,
+                    "minLength": 3,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "title",
+                  "severity"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Report an incident manually",
+        "tags": [
+          "incidents"
+        ]
+      }
+    },
+    "/incidents/summary": {
+      "get": {
+        "operationId": "IncidentController_summary",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "incidents"
+        ]
+      }
+    },
+    "/incidents/{id}": {
+      "get": {
+        "operationId": "IncidentController_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Incident with its timeline",
+        "tags": [
+          "incidents"
+        ]
+      }
+    },
+    "/incidents/{id}/assign": {
+      "post": {
+        "operationId": "IncidentController_assign",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "assignee_id": {
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "assignee_username": {
+                    "maxLength": 255,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "assignee_id",
+                  "assignee_username"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "incidents"
+        ]
+      }
+    },
+    "/incidents/{id}/close": {
+      "post": {
+        "operationId": "IncidentController_close",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Close a resolved incident",
+        "tags": [
+          "incidents"
+        ]
+      }
+    },
+    "/incidents/{id}/notes": {
+      "post": {
+        "operationId": "IncidentController_addNote",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "message": {
+                    "maxLength": 4000,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "message"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "incidents"
+        ]
+      }
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    }
+  ],
+  "servers": [],
+  "tags": []
+}

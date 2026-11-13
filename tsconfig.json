@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "incremental": false,
+    "allowJs": true,
+    "checkJs": false
+  },
+  "include": ["tests/**/*.ts", "packages/*/src/**/*.test.ts", "services/*/src/**/*.test.ts", "apps/gateway/src/**/*.test.ts", "vitest.config.ts"]
+}

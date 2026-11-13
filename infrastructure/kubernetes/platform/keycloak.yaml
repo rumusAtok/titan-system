@@ -1,0 +1,65 @@
+# PLANNED production topology. Custom resource for the Keycloak Operator.
+# Schema-validated where a published schema exists; NOT deployed or tested
+# from this repository.
+#
+# Two Keycloak instances behind the ingress, sharing state through the
+# clustered cache and a dedicated database in the CloudNativePG cluster.
+# Losing one instance does not interrupt sign-in.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: titan-identity
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+---
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: Keycloak
+metadata:
+  name: keycloak
+  namespace: titan-identity
+spec:
+  instances: 2
+  db:
+    vendor: postgres
+    host: titan-pg-rw.titan-data.svc
+    port: 5432
+    database: keycloak
+    usernameSecret:
+      name: keycloak-db
+      key: username
+    passwordSecret:
+      name: keycloak-db
+      key: password
+  hostname:
+    hostname: https://id.titan.example.gov
+    backchannelDynamic: true
+  http:
+    tlsSecret: keycloak-tls
+  proxy:
+    headers: xforwarded
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+  scheduling:
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchLabels:
+                app: keycloak
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: keycloak
+  namespace: titan-identity
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: keycloak

@@ -1,0 +1,116 @@
+# PLANNED production topology (primary region). Schema-validated, NOT deployed
+# or tested from this repository. See docs/architecture/high-availability.md.
+#
+# PostgreSQL for all TITAN services, managed by CloudNativePG:
+#   - 3 instances spread over 3 zones, automatic failover inside the region
+#   - one synchronous standby (quorum), so a committed transaction survives
+#     the loss of any single instance
+#   - continuous WAL archiving and base backups to object storage (PITR)
+# Each service still has its own database and its own roles inside the cluster.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: titan-data
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: titan-pg
+  namespace: titan-data
+spec:
+  instances: 3
+  imageName: ghcr.io/cloudnative-pg/postgresql:17
+  primaryUpdateStrategy: unsupervised
+  primaryUpdateMethod: switchover
+
+  # Synchronous replication: commit waits for one standby. If no standby is
+  # available writes continue (dataDurability: preferred) - availability over
+  # zero-loss; change to "required" where losing a transaction is worse than an outage.
+  postgresql:
+    synchronous:
+      method: any
+      number: 1
+      dataDurability: preferred
+    parameters:
+      max_connections: "400"
+      wal_keep_size: 2GB
+      log_min_duration_statement: "500"
+      shared_preload_libraries: vector
+
+  affinity:
+    enablePodAntiAffinity: true
+    podAntiAffinityType: required
+    topologyKey: kubernetes.io/hostname
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          cnpg.io/cluster: titan-pg
+
+  storage:
+    size: 200Gi
+    storageClass: fast-ssd
+  walStorage:
+    size: 50Gi
+    storageClass: fast-ssd
+
+  resources:
+    requests:
+      cpu: "2"
+      memory: 8Gi
+    limits:
+      cpu: "4"
+      memory: 8Gi
+
+  # Databases and roles are created by a bootstrap job / operator-managed roles;
+  # passwords come from Secrets synchronised from the secret manager.
+  managed:
+    roles:
+      - name: case_owner
+        ensure: present
+        login: true
+        passwordSecret:
+          name: pg-role-case-owner
+      - name: case_app
+        ensure: present
+        login: true
+        passwordSecret:
+          name: pg-role-case-app
+      # ... one owner role and one runtime role per service (see docs/database/ownership-matrix.md)
+
+  backup:
+    retentionPolicy: 30d
+    barmanObjectStore:
+      destinationPath: s3://titan-pg-backups-primary/titan-pg
+      s3Credentials:
+        accessKeyId:
+          name: pg-backup-credentials
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: pg-backup-credentials
+          key: SECRET_ACCESS_KEY
+      wal:
+        compression: gzip
+        encryption: AES256
+      data:
+        compression: gzip
+        encryption: AES256
+
+  monitoring:
+    enablePodMonitor: true
+---
+# Daily base backup; WAL is archived continuously between base backups.
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: titan-pg-daily
+  namespace: titan-data
+spec:
+  schedule: "0 0 1 * * *"
+  backupOwnerReference: self
+  cluster:
+    name: titan-pg

@@ -1,0 +1,14 @@
+TITAN {{ .Chart.AppVersion }} installed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+  Web:  {{ .Values.global.publicUrl }}
+  API:  {{ .Values.global.apiUrl }}
+
+Before the workloads can start, these must exist:
+  - Secrets <service>-db (DATABASE_URL, DATABASE_OWNER_URL) for every service with a database
+  - Secrets data-pipeline-service-identity and ai-gateway-service-identity (SERVICE_CLIENT_SECRET)
+  - Secret telemetry-mqtt (MQTT_USERNAME, MQTT_PASSWORD)
+  - PostgreSQL (CloudNativePG), NATS JetStream, Keycloak and the MQTT broker
+    (see infrastructure/kubernetes/platform)
+
+This chart has been rendered and schema-validated. It has not been exercised on a
+cluster by the test suite of this repository: validate it in a staging environment first.

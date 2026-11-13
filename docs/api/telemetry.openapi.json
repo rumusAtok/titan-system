@@ -1,0 +1,108 @@
+{
+  "components": {
+    "schemas": {},
+    "securitySchemes": {
+      "bearer": {
+        "bearerFormat": "JWT",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "contact": {},
+    "description": "Measurement ingestion over MQTT, validation, normalisation and partitioned time-series persistence.",
+    "title": "TITAN telemetry-service",
+    "version": "0.1.0"
+  },
+  "openapi": "3.0.0",
+  "paths": {
+    "/ingest/stats": {
+      "get": {
+        "operationId": "TelemetryController_stats",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Ingestion health for the last hour: quality mix, latency, rejections",
+        "tags": [
+          "telemetry"
+        ]
+      }
+    },
+    "/latest": {
+      "get": {
+        "operationId": "TelemetryController_latest",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Latest reading per device and sensor",
+        "tags": [
+          "telemetry"
+        ]
+      }
+    },
+    "/measurements": {
+      "get": {
+        "operationId": "TelemetryController_measurements",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Raw readings with quality flags and observed/received/processed timestamps",
+        "tags": [
+          "telemetry"
+        ]
+      }
+    },
+    "/series": {
+      "get": {
+        "operationId": "TelemetryController_series",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Down-sampled series (avg/min/max per bucket) for charts",
+        "tags": [
+          "telemetry"
+        ]
+      }
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    }
+  ],
+  "servers": [],
+  "tags": []
+}
