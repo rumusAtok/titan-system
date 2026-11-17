@@ -1,13 +1,69 @@
-# TITAN v2.0 — progress log
+# TITAN progress log
 
 Single source of truth for what exists, what was verified, and what is still open.
 "Verified" means the command was actually run in this repository and passed; the evidence is in
 `docs/testing/verification-report.md`.
 
-_Last updated: 2026-11-13 (stage 10 complete: handover state)_
+_Last updated: 2026-11-17 (v3 multi-industry platform on branch `feature/v3-industry-packs`)_
 
 **Status: locally verified development release. Not production-ready, not deployed to any
 cluster, not highly available, all data synthetic.**
+
+## TITAN v3: multi-industry evolution (2026-11-16 / 17)
+
+Branch `feature/v3-industry-packs`, from `main` at `c78f461` (v2, committed and pushed by the
+user). **Not committed yet.** Design: `docs/architecture/industry-packs.md`, ADR-0011 to 0014.
+
+| Milestone | State |
+| --- | --- |
+| Baseline before changes | build pass; v2 suite 122 passed, 1 skipped (analytics trend check: stack too young), 0 failed |
+| Contracts: capabilities, subject registry, field specs, pack manifest schema, new events | Done, unit-tested |
+| Pack registry in tenant-service: catalogue, activation, dependencies, upgrade paths, configuration, deactivation without deletion, history, export/import, workspace, dashboard layouts, sites | Done, verified |
+| Entitlements: projection in every Node service, `@RequireCapability`, Python `EntitlementsClient` | Done, verified |
+| Workflow subject registry and generic start/cancel events | Done, verified |
+| Incident categories, typed origins, asset/site references | Done, verified |
+| Asset attribute schemas (versioned), sensor profiles, arbitrary metrics | Done, verified |
+| maintenance-service (minimum slice) | Done, verified |
+| Packs: platform-core, public-services, disaster-infrastructure, manufacturing 1.0.0 / 1.1.0, facilities | Done, contract-tested |
+| Pipeline, analytics dataset registry (11 datasets), AI industry tools | Done, verified |
+| Web: workspace navigation and selector, dashboards from packs, work inbox, assets, incidents, maintenance, manufacturing, facilities, pack administration | Done; browser-tested (see results) |
+| DR: new database and pack configuration in backup verification | Done; drill result below |
+| Helm chart: maintenance-service, new URLs, map tiles as a value | Lint and strict schema validation pass (85 resources); not deployed |
+| Docs, CLAUDE.md, README, OpenAPI (14 services, 145 operations) | Done |
+
+### v3 verified results (2026-11-17)
+
+| What | Result |
+| --- | --- |
+| `npm run build` | pass |
+| Node unit tests (container) | 128 passed (13 files) |
+| Python unit tests | pipeline 18, analytics 8, AI gateway 70 passed |
+| Pack manifest contract test | 32 passed |
+| Integration + security + contract (`npm run test:integration`) | 243 passed, 0 failed, 0 skipped (204 s) |
+| Browser tests | 26 passed (Chromium; incl. accessibility scan and phone layout of the new pages) |
+| Restore drill incl. industry configuration | passed: 15 databases (236 MB) backed up in 102 s, restored and verified in 85.8 s; industry configuration and a maintenance request with its work order present (report backup-restore-20261117T074538Z) |
+| Helm lint / kubeconform | 0 failures / 85 resources valid |
+
+### Defects and wrong assumptions found during v3 (all fixed)
+
+1. `pack_id` was added to four existing maintenance event payloads as a required field; events
+   already in the stream failed the event contract test. Made optional (backward-compatible),
+   and the rule is now in CLAUDE.md (rule 14).
+2. Service identities hold no capability, so the case API now refuses them (403) where it
+   returned an empty list; the analytics test was updated to the new, stricter behaviour.
+3. The web menu is now loaded asynchronously; two browser tests read it without waiting.
+4. A pipeline-unit-test and two AI routing tests encoded the old tool list or the wrong fallback.
+5. Several tests written in this stage contained assertions that could never fail; they were
+   found on review and replaced before being relied on (recorded in the verification report).
+
+### v3 open items (next steps, in order)
+
+1. Review and commit the branch; run the CI workflow (it now also runs the analytics unit tests
+   and the manifest contract test).
+2. Run the failover and failback drills with maintenance-service in the stack (not re-run in v3).
+3. Event-fed entitlements for the Python services (risk S13); per-service installation status.
+4. Role provisioning from packs and site-scoped permissions (risk P11).
+5. Remaining services: document, report, procurement/inventory, inspection planning.
 
 ## Environment
 

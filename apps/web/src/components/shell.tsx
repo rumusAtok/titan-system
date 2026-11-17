@@ -1,7 +1,9 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, Bell, Bot, Building2, ClipboardCheck, FileText, LayoutDashboard, LifeBuoy, LogOut, Map as MapIcon, Menu, Settings, X } from 'lucide-react';
+import {
+  Activity, Bell, Bot, Boxes, Building, Building2, ClipboardCheck, Factory, FileText, Gauge, Inbox, LayoutDashboard, LifeBuoy, LogOut, Map as MapIcon, Menu, Settings, Siren, Wrench, X,
+} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { type ReactNode, useEffect, useState } from 'react';
@@ -9,7 +11,8 @@ import { api } from '@/lib/api';
 import { REVIEWER_ROLES, STAFF_ROLES, useAuth } from '@/lib/auth';
 import { getConfig } from '@/lib/config';
 import { ago, titleCase } from '@/lib/format';
-import { Button, Dialog, EmptyState } from './ui';
+import { useWorkspace } from '@/lib/workspace';
+import { Button, Dialog, EmptyState, inputClass } from './ui';
 
 interface NavItem {
   href: string;
@@ -19,7 +22,30 @@ interface NavItem {
   roles?: string[];
 }
 
-/** Navigation is derived from the roles in the user's token. The services enforce the same rules again. */
+/** Icons the industry-pack manifests may name (checked by the manifest contract test). */
+export const ICONS: Record<string, typeof LayoutDashboard> = {
+  'layout-dashboard': LayoutDashboard,
+  inbox: Inbox,
+  boxes: Boxes,
+  siren: Siren,
+  bot: Bot,
+  settings: Settings,
+  'life-buoy': LifeBuoy,
+  gauge: Gauge,
+  'file-text': FileText,
+  'clipboard-check': ClipboardCheck,
+  activity: Activity,
+  map: MapIcon,
+  factory: Factory,
+  wrench: Wrench,
+  building: Building,
+};
+
+/**
+ * Fallback navigation, used only when the workspace (which the tenant's industry
+ * packs define) cannot be loaded: the TITAN v2 menu, derived from the roles in the
+ * token. Either way the services enforce access themselves.
+ */
 export const NAV: NavItem[] = [
   { href: '/', label: 'Executive dashboard', icon: LayoutDashboard, roles: STAFF_ROLES },
   { href: '/government/', label: 'Applications', icon: FileText, roles: ['applicant', ...REVIEWER_ROLES, 'tenant_admin', 'auditor'] },
@@ -35,6 +61,26 @@ function isActive(pathname: string, href: string): boolean {
   if (href === '/') return pathname === '/';
   if (href === '/government/') return pathname.startsWith('/government') && !pathname.startsWith('/government/inbox');
   return pathname.startsWith(href.replace(/\/$/, ''));
+}
+
+/** Industry workspace: narrows navigation and dashboards to one pack plus the universal core. */
+function WorkspaceSelector() {
+  const { info, selected, select } = useWorkspace();
+  if (!info || info.workspaces.length < 3) return null;
+  return (
+    <div className="border-b border-white/10 px-4 py-3">
+      <label htmlFor="workspace-select" className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-sky-200">
+        Workspace
+      </label>
+      <select id="workspace-select" value={selected} onChange={(e) => select(e.target.value)} className={`${inputClass} bg-white text-sm`} data-testid="workspace-select">
+        {info.workspaces.map((w) => (
+          <option key={w.id} value={w.id}>
+            {w.name}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
 }
 
 function Notifications() {
@@ -88,12 +134,18 @@ export function Shell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const tenant = useQuery({ queryKey: ['tenant', 'current'], queryFn: () => api<{ name: string }>('/api/tenant/tenants/current'), staleTime: 5 * 60_000, retry: false });
-  const items = NAV.filter((i) => !i.roles || hasRole(...i.roles));
+  const workspace = useWorkspace();
+  // Navigation from the tenant's active packs, already filtered by role on the server.
+  const items: NavItem[] = workspace.info
+    ? workspace.navigation.map((n) => ({ href: n.href, label: n.label, icon: ICONS[n.icon] ?? LayoutDashboard }))
+    : workspace.isError
+      ? NAV.filter((i) => !i.roles || hasRole(...i.roles))
+      : [];
 
   useEffect(() => setMenuOpen(false), [pathname]);
 
   const nav = (
-    <nav aria-label="Main" className="flex flex-col gap-0.5 p-3">
+    <nav aria-label="Main" className="flex flex-col gap-0.5 p-3" aria-busy={!workspace.info && !workspace.isError}>
       {items.map((item) => {
         const active = isActive(pathname, item.href);
         return (
@@ -126,6 +178,7 @@ export function Shell({ children }: { children: ReactNode }) {
             <p className="text-[11px] leading-tight text-sky-200">Operations platform</p>
           </div>
         </div>
+        <WorkspaceSelector />
         {nav}
         <p className="mt-auto border-t border-white/10 p-4 text-[11px] leading-snug text-sky-200">
           {titleCase(getConfig().environment)} environment. All records are synthetic demonstration data.
@@ -143,6 +196,7 @@ export function Shell({ children }: { children: ReactNode }) {
                 <X className="h-5 w-5" aria-hidden="true" />
               </button>
             </div>
+            <WorkspaceSelector />
             {nav}
           </aside>
         </div>

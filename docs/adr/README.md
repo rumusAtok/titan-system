@@ -14,6 +14,10 @@ Each record states the context, the decision and its consequences. Status is *ac
 | [0008](#adr-0008-ai-as-an-optional-read-only-subsystem) | AI as an optional, read-only subsystem |
 | [0009](#adr-0009-static-web-application-with-run-time-configuration) | Static web application with run-time configuration |
 | [0010](#adr-0010-active-passive-recovery-with-operator-confirmed-failover) | Active-passive recovery with operator-confirmed failover |
+| [0011](#adr-0011-industry-packs-are-declarative-manifests-installed-by-the-owning-services) | Industry packs are declarative manifests installed by the owning services |
+| [0012](#adr-0012-capability-entitlements-enforced-by-every-service-from-a-local-projection) | Capability entitlements enforced by every service from a local projection |
+| [0013](#adr-0013-a-controlled-registry-of-workflow-subject-types) | A controlled registry of workflow subject types |
+| [0014](#adr-0014-one-maintenance-service-shared-by-industries) | One maintenance service shared by industries |
 
 ---
 
@@ -181,3 +185,73 @@ and both are used.
 **Consequences.** Recovery time includes a human decision. The procedure and the software's
 behaviour under failover are tested; geographic separation, real fencing and regional timings
 are not.
+
+## ADR-0011: Industry packs are declarative manifests installed by the owning services
+
+**Context.** TITAN v3 must serve many industries without becoming a set of per-industry copies,
+and without running code supplied by tenants.
+
+**Decision.** An industry pack is a versioned JSON manifest shipped with tenant-service and
+validated against a schema in `@titan/contracts`. It names capabilities and carries templates:
+workflows, forms, asset categories with attribute schemas, sensor profiles, alert rules, incident
+categories, request types, dashboards, and the names of reviewed query templates and AI tools.
+tenant-service records activation and announces the templates in `tenant.pack.activated.v1`;
+each owning service installs its part idempotently in its own database. Published versions are
+immutable (the catalogue table refuses updates). Upgrades follow declared paths; deactivation
+deletes nothing. Uploading packs is not supported.
+
+**Consequences.** A new industry needs no new service when its behaviour is expressible with the
+existing capabilities; behaviour that is not (a real procurement process) needs a new service, as
+the directive requires. Installation is eventually consistent: a few hundred milliseconds after
+activation locally. Templates installed by a deactivated pack remain, which keeps running
+processes valid but means a re-activation does not start from a clean slate.
+
+## ADR-0012: Capability entitlements enforced by every service from a local projection
+
+**Context.** Hiding a menu is not a control. Each service must refuse a module its tenant has not
+activated, without calling tenant-service on every request (availability, latency) and without
+reading its database (ADR-0001).
+
+**Decision.** tenant-service announces a tenant's complete entitlement state with a monotonically
+increasing revision. Every Node service keeps a `tenant_entitlements` projection (platform
+migration) under row-level security, updated by its own durable consumer; `@RequireCapability`
+and a global guard refuse other tenants with `403 capability_disabled` and record the refusal.
+Python services ask tenant-service with the caller's own token and cache briefly. Unknown means
+no capability (fail closed); a known answer survives a tenant-service outage.
+
+**Consequences.** Enforcement keeps working when tenant-service is down. A newly activated pack
+becomes usable after the event is consumed (seconds at most; the seed and tests wait for it). The
+Python cache means up to 5 seconds of lag after a change. Service identities belong to no tenant
+and therefore hold no capability: the case API now refuses them instead of returning an empty
+list (one analytics test was updated for this).
+
+## ADR-0013: A controlled registry of workflow subject types
+
+**Context.** The workflow engine accepted only `case` and `incident`, enforced by CHECK
+constraints and hard-coded event handling.
+
+**Decision.** A `workflow_subject_types` table (mirroring `SUBJECT_TYPES` in `@titan/contracts`)
+is referenced by definitions and instances. New types are added only by migration; the runtime
+role cannot change the table. Services that own other subjects start and cancel processes with
+`workflow.start.requested.v1` and `workflow.cancel.requested.v1`; cases and incidents keep their
+original triggers. Returning for changes remains limited to subject types that support it.
+
+**Consequences.** Five types are registered for future services (work order, inspection,
+purchase request, quality deviation, contract) with no owner yet: definitions can be prepared, but
+no process runs until an owning service emits the start event.
+
+## ADR-0014: One maintenance service shared by industries
+
+**Context.** Manufacturing and facilities both need requests, approval and work orders. Two
+copies would diverge; one service with industry branches would accumulate industry rules.
+
+**Decision.** maintenance-service implements the generic slice: request types (from packs),
+requests, approval outcome (decided by workflow-service), work orders and their lifecycle.
+Industry differences are configuration: request types, approval workflows, detail fields, and
+automatic creation from an incident category. Records carry the pack they belong to, so one
+tenant's industries stay separable in lists, datasets and dashboards.
+
+**Consequences.** Preventive schedules, spare parts, labour costing and inspection plans are not
+implemented. Effects on other services are by event only: asset-service sets an asset under
+maintenance and back, and records the condition; incident-service writes the work to the incident
+timeline but never resolves an incident on its own.

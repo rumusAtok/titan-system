@@ -8,6 +8,7 @@ It contains no business logic.
 from .auth import Principal, ServiceTokenProvider, TokenVerifier, current_user, require_roles
 from .config import Settings, load_settings
 from .db import Database, run_migrations
+from .entitlements import EntitlementsClient, TenantEntitlements
 from .errors import DomainError
 from .events import EventBus, build_envelope
 from .observability import correlation_id, get_logger
@@ -16,10 +17,12 @@ from .service import create_app
 __all__ = [
     "Database",
     "DomainError",
+    "EntitlementsClient",
     "EventBus",
     "Principal",
     "ServiceTokenProvider",
     "Settings",
+    "TenantEntitlements",
     "TokenVerifier",
     "build_envelope",
     "correlation_id",

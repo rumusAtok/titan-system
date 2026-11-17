@@ -4,7 +4,7 @@ import { CurrentUser, type Principal, RequireRoles } from '@titan/authentication
 import { Roles } from '@titan/contracts';
 import { ZBody } from '@titan/platform';
 import type { z } from 'zod';
-import { CreateDepartment, CreateJurisdiction, CreateTenant, TenantService, UpdateConfig, UpsertMembership } from './tenant.service.js';
+import { CreateDepartment, CreateJurisdiction, CreateSite, CreateTenant, TenantService, UpdateConfig, UpsertMembership } from './tenant.service.js';
 
 /** Descriptions shown in the administration UI. Role assignment itself is done in Keycloak. */
 const ROLE_CATALOG = [
@@ -20,6 +20,11 @@ const ROLE_CATALOG = [
   { role: Roles.Analyst, scope: 'tenant', description: 'Reads analytical datasets and reports' },
   { role: Roles.Auditor, scope: 'tenant', description: 'Reads audit records' },
   { role: Roles.TenantAdmin, scope: 'tenant', description: 'Administers the tenant' },
+  { role: Roles.ProductionSupervisor, scope: 'tenant', description: 'Acknowledges equipment incidents and approves maintenance requests' },
+  { role: Roles.MaintenancePlanner, scope: 'tenant', description: 'Plans and assigns maintenance work orders' },
+  { role: Roles.MaintenanceTechnician, scope: 'tenant', description: 'Carries out and completes work orders' },
+  { role: Roles.FacilityManager, scope: 'tenant', description: 'Manages facilities, service requests and facility incidents' },
+  { role: Roles.ServiceRequester, scope: 'tenant', description: 'Raises service requests and follows their own' },
   { role: Roles.DrOperator, scope: 'platform', description: 'Operates disaster-recovery controls' },
   { role: Roles.PlatformAdmin, scope: 'platform', description: 'Administers the platform across tenants' },
 ];
@@ -40,8 +45,8 @@ export class TenantController {
   @Post('tenants')
   @RequireRoles(Roles.PlatformAdmin)
   @ApiOperation({ summary: 'Create a tenant (platform administrators only)' })
-  create(@ZBody(CreateTenant) body: z.infer<typeof CreateTenant>) {
-    return this.tenants.createTenant(body);
+  create(@CurrentUser() user: Principal, @ZBody(CreateTenant) body: z.infer<typeof CreateTenant>) {
+    return this.tenants.createTenant(body, user.username);
   }
 
   @Get('tenants/current')
@@ -77,6 +82,18 @@ export class TenantController {
   @RequireRoles(Roles.TenantAdmin)
   createJurisdiction(@CurrentUser() user: Principal, @ZBody(CreateJurisdiction) body: z.infer<typeof CreateJurisdiction>) {
     return this.tenants.createJurisdiction(user, body);
+  }
+
+  @Get('sites')
+  @ApiOperation({ summary: 'Organisation structure below the tenant: business units, plants, facilities, buildings, lines' })
+  listSites(@CurrentUser() user: Principal) {
+    return this.tenants.listSites(user);
+  }
+
+  @Post('sites')
+  @RequireRoles(Roles.TenantAdmin)
+  createSite(@CurrentUser() user: Principal, @ZBody(CreateSite) body: z.infer<typeof CreateSite>) {
+    return this.tenants.createSite(user, body);
   }
 
   @Get('memberships')

@@ -183,7 +183,14 @@
                   "subject_type": {
                     "enum": [
                       "case",
-                      "incident"
+                      "incident",
+                      "maintenance_request",
+                      "service_request",
+                      "work_order",
+                      "inspection",
+                      "purchase_request",
+                      "quality_deviation",
+                      "contract"
                     ],
                     "type": "string"
                   }
@@ -322,7 +329,7 @@
             "bearer": []
           }
         ],
-        "summary": "Process state, planned stages, tasks and decision history for a case or incident",
+        "summary": "Process state, planned stages, tasks and decision history for a business subject (case, incident, maintenance request, ...)",
         "tags": [
           "workflow"
         ]
@@ -361,6 +368,26 @@
             "bearer": []
           }
         ],
+        "tags": [
+          "workflow"
+        ]
+      }
+    },
+    "/subject-types": {
+      "get": {
+        "operationId": "WorkflowController_subjectTypes",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Registered business subject types a workflow can be defined for",
         "tags": [
           "workflow"
         ]

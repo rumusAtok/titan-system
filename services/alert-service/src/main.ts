@@ -1,18 +1,19 @@
 import { Controller, Get, HttpCode, Inject, Module, Param, Patch, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, type Principal, RequireRoles } from '@titan/authentication';
-import { Roles, STAFF_ROLES } from '@titan/contracts';
-import { bootstrapService, PlatformModule, uuidParam, ZBody, ZQuery } from '@titan/platform';
+import { Capabilities, Roles, STAFF_ROLES } from '@titan/contracts';
+import { bootstrapService, PlatformModule, RequireCapability, uuidParam, ZBody, ZQuery } from '@titan/platform';
 import type { z } from 'zod';
 import { AlertService, CreateRule, ListAlerts, UpdateRule } from './alert.service.js';
 
 const RULE_WRITERS = [Roles.IotOperator, Roles.TenantAdmin];
-const RESPONDERS = [Roles.DutyOfficer, Roles.IncidentCommander, Roles.IotOperator];
+const RESPONDERS = [Roles.DutyOfficer, Roles.IncidentCommander, Roles.IotOperator, Roles.ProductionSupervisor, Roles.MaintenancePlanner];
 
 @ApiTags('alerts')
 @ApiBearerAuth()
 @Controller()
 @RequireRoles(...STAFF_ROLES)
+@RequireCapability(Capabilities.Iot)
 class AlertController {
   constructor(@Inject(AlertService) private readonly alerts: AlertService) {}
 

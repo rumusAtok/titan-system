@@ -1,7 +1,10 @@
 # TITAN platform — working rules for this repository
 
-TITAN is a multi-tenant government/enterprise operations platform built as independently
-deployable microservices. This file holds the durable rules; `PROGRESS.md` holds current state.
+TITAN is a multi-tenant, industry-agnostic operations platform built as independently
+deployable microservices. Since v3 it has three layers: a universal core, switchable business
+capabilities (`case_management`, `iot`, `maintenance`) and declarative industry packs
+(`docs/architecture/industry-packs.md`). This file holds the durable rules; `PROGRESS.md` holds
+current state.
 
 **Status honesty:** this is a locally verified development release. Never describe it as
 production-ready, certified, or highly available. Never record a build, test, backup, failover
@@ -12,7 +15,8 @@ or integration as passing unless it was actually executed; put the evidence in
 
 | Path | What |
 | --- | --- |
-| `packages/contracts` | Event envelope, event catalog (Zod payload schemas), role names |
+| `packages/contracts` | Event envelope, event catalog (Zod payload schemas), role names, capabilities, workflow subject registry, pack manifest schema, field specs |
+| `services/tenant-service/packs/<id>/<version>.json` | Industry pack manifests (immutable once released; add a new version file) |
 | `packages/observability` | Logger, correlation/trace context, Prometheus metrics |
 | `packages/authentication` | JWT verification, `Principal`, `AuthGuard`, `@RequireRoles`, `@CurrentUser` |
 | `packages/platform` | Config, `Db` (tenant-bound transactions), migrations, outbox, consumers, resilience, bootstrap |
@@ -48,6 +52,20 @@ or integration as passing unless it was actually executed; put the evidence in
    fallbacks must never be labelled as AI-generated.
 9. **No safety-critical actuation.** Nothing in this repository may command physical equipment.
 10. **Secrets** never go in Git. `.env` is ignored; `.env.example` holds development-only values.
+11. **Capabilities are enforced by the owning service.** A controller of a switchable capability
+    carries `@RequireCapability(Capabilities.X)`; Python services use `EntitlementsClient`. Menu
+    visibility is never the control. Unknown entitlements mean no capability (fail closed).
+12. **Packs are data, never code.** No expressions, SQL or scripts in a manifest; it may only name
+    things that already exist (datasets, query templates, AI tools, icons) and the manifest
+    contract test checks that. A released `<version>.json` is never edited: publish a new version
+    with `lifecycle.upgrades_from`. Installing a template must be idempotent, must create a new
+    version rather than change one in use, and must never change a record a person created.
+    Deactivating a pack deletes nothing.
+13. **New workflow subject types** are added to `SUBJECT_TYPES` in `@titan/contracts` AND by a
+    forward-only migration of `workflow_subject_types`; the owner starts processes with
+    `workflow.start.requested.v1`.
+14. **Adding a field to an existing event payload** makes it optional (old events stay valid);
+    anything else needs a new `.vN` type.
 
 ## Conventions
 
@@ -75,7 +93,8 @@ npm run build
 # start / stop the stack (profiles: core iot analytics ai observability dr-lab)
 docker compose --profile core --profile iot up -d --build
 docker compose --profile core --profile iot down          # keeps data volumes
-npm run seed                                              # synthetic reference data via the API
+node scripts/identity-sync.mjs                            # add demo users/roles missing from an existing Keycloak
+npm run seed                                              # synthetic reference data via the API (activates packs)
 
 # or the wrapper: setup | up [-Profiles core,iot,analytics,ai] | status | seed | test | down | destroy
 ./scripts/titan.ps1 up
@@ -109,6 +128,11 @@ state that follows an event with the waiting helpers in `tests/helpers/stack.ts`
 `caseStatus`, `pendingTask`), never with an immediate assertion. The suite runs with
 `--test-concurrency=1` because Tests D and G stop and start containers.
 
+`tests/contract/pack-manifests.test.ts` needs no stack but reads compiled output: run
+`npm run build` first. After adding a demo user or role to
+`infrastructure/docker/keycloak/identity-data.mjs`, regenerate the realm and run
+`node scripts/identity-sync.mjs` (Keycloak imports the realm file only into an empty database).
+
 Shell scripts that build values containing `{`/`}` (tile URL templates) must not put them inside
 `${VAR:=default}`: the shell ends the expansion at the first `}`.
 
@@ -119,5 +143,8 @@ Migrations run automatically at service start (`MIGRATE_ON_START=true`), or expl
 
 - `npm run build` passes.
 - Unit tests and the affected integration tests pass; new behaviour has a test.
-- A new endpoint has role checks and a tenant-isolation consideration; a new table has RLS.
+- A new endpoint has role checks, a capability check if it belongs to a switchable capability,
+  and a tenant-isolation consideration; a new table has RLS.
+- A new or changed endpoint: `npm run openapi:export` and review the diff (the API contract test
+  fails otherwise).
 - `PROGRESS.md` and the relevant document under `docs/` are updated to match the code.

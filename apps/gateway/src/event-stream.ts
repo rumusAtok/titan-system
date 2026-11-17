@@ -6,7 +6,7 @@ import { gauge, type Logger } from '@titan/observability';
 import { LOGGER, NatsClient } from '@titan/platform';
 
 /** Event families pushed to operator screens. Everything else stays server-side. */
-const STREAMED_PREFIXES = ['telemetry.measurement.', 'alert.', 'incident.', 'device.status_changed.', 'workflow.task.', 'workflow.case.', 'case.submitted.'];
+const STREAMED_PREFIXES = ['telemetry.measurement.', 'alert.', 'incident.', 'device.status_changed.', 'workflow.task.', 'workflow.case.', 'case.submitted.', 'maintenance.', 'tenant.entitlements.'];
 
 interface Client {
   tenantId: string;

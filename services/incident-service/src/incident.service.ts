@@ -1,15 +1,35 @@
 import { Inject, Injectable, type OnApplicationBootstrap } from '@nestjs/common';
 import type { Principal } from '@titan/authentication';
-import { type EventEnvelope, type EventPayload, Roles } from '@titan/contracts';
+import {
+  DEFAULT_INCIDENT_CATEGORY,
+  DEFAULT_INCIDENT_WORKFLOW,
+  type EventEnvelope,
+  type EventPayload,
+  type IncidentSourceType,
+  PackIncidentCategory,
+  Roles,
+} from '@titan/contracts';
 import { Db, DomainError, EventConsumers, Outbox, type Q } from '@titan/platform';
 import { z } from 'zod';
+import { describeOrigin, responseOverdue } from './rules.js';
 
-export const CreateIncident = z.object({
-  title: z.string().min(3).max(200),
-  description: z.string().max(4000).default(''),
-  severity: z.enum(['info', 'warning', 'critical']),
-  device_id: z.uuid().nullable().default(null),
-});
+export const CreateIncident = z
+  .object({
+    title: z.string().min(3).max(200),
+    description: z.string().max(4000).default(''),
+    severity: z.enum(['info', 'warning', 'critical']),
+    device_id: z.uuid().nullable().default(null),
+    /** Category configured for the tenant (by an industry pack); `general` always exists. */
+    category: z.string().regex(/^[a-z][a-z0-9-]{1,62}$/).default(DEFAULT_INCIDENT_CATEGORY),
+    /** Asset the incident concerns, when there is one. */
+    asset_id: z.uuid().nullable().default(null),
+    site_id: z.uuid().nullable().default(null),
+    /** Where the report comes from. Alarms raise incidents themselves and cannot be claimed here. */
+    source_type: z.enum(['manual', 'inspection', 'work_order', 'service_request', 'external']).default('manual'),
+    /** Identifier of the originating record; required for every origin except `manual`. One incident per origin. */
+    source_id: z.string().min(1).max(200).nullable().default(null),
+  })
+  .refine((i) => i.source_type === 'manual' || i.source_id !== null, { message: 'source_id is required unless source_type is manual', path: ['source_id'] });
 
 export const AssignIncident = z.object({
   assignee_id: z.string().min(1).max(100),
@@ -21,6 +41,8 @@ export const AddNote = z.object({ message: z.string().trim().min(1).max(4000) })
 export const ListIncidents = z.object({
   status: z.enum(['open', 'acknowledged', 'resolved', 'closed', 'active']).optional(),
   severity: z.enum(['info', 'warning', 'critical']).optional(),
+  category: z.string().max(64).optional(),
+  asset_id: z.uuid().optional(),
   limit: z.coerce.number().int().min(1).max(500).default(100),
   offset: z.coerce.number().int().min(0).default(0),
 });
@@ -33,9 +55,12 @@ export interface IncidentRow {
   description: string;
   severity: 'info' | 'warning' | 'critical';
   status: 'open' | 'acknowledged' | 'resolved' | 'closed';
-  source_type: 'alert' | 'manual';
+  source_type: IncidentSourceType;
   source_id: string | null;
   device_id: string | null;
+  category: string;
+  asset_id: string | null;
+  site_id: string | null;
   assignee_id: string | null;
   assignee_username: string | null;
   acknowledged_by: string | null;
@@ -48,21 +73,54 @@ export interface IncidentRow {
   updated_at: Date;
 }
 
-const COLUMNS = `id, tenant_id, reference_no, title, description, severity, status, source_type, source_id, device_id, assignee_id,
-  assignee_username, acknowledged_by, acknowledged_at, resolved_by, resolved_at, closed_at, version, created_at, updated_at`;
+export interface CategoryRow {
+  key: string;
+  name: string;
+  description: string;
+  workflow_key: string;
+  notify_role: string;
+  response_targets: Record<string, number>;
+  pack_id: string | null;
+}
+
+const COLUMNS = `id, tenant_id, reference_no, title, description, severity, status, source_type, source_id, device_id, category, asset_id, site_id,
+  assignee_id, assignee_username, acknowledged_by, acknowledged_at, resolved_by, resolved_at, closed_at, version, created_at, updated_at`;
+
+/** Used when a tenant has no row for `general` (no pack has installed one yet). */
+const GENERAL: CategoryRow = {
+  key: DEFAULT_INCIDENT_CATEGORY,
+  name: 'General',
+  description: '',
+  workflow_key: DEFAULT_INCIDENT_WORKFLOW,
+  notify_role: Roles.DutyOfficer,
+  response_targets: {},
+  pack_id: null,
+};
 
 interface Actor {
   id: string | null;
   username: string | null;
 }
 
+interface OpenInput {
+  title: string;
+  description: string;
+  severity: IncidentRow['severity'];
+  deviceId: string | null;
+  assetId: string | null;
+  siteId: string | null;
+  category: CategoryRow;
+  source: { type: IncidentSourceType; id: string | null };
+}
+
 /**
  * Incident lifecycle: open -> acknowledged -> resolved -> closed.
  *
  * Acknowledgment and resolution are not commands of this service. They are
- * the outcome of the incident-response workflow (workflow-service), which
+ * the outcome of the incident's response workflow (workflow-service), which
  * decides who is authorised to perform them; this service applies the result
- * when the corresponding workflow stage completes.
+ * when the corresponding workflow stage completes. Which workflow that is,
+ * and who is told about a new incident, comes from the incident's category.
  */
 @Injectable()
 export class IncidentService implements OnApplicationBootstrap {
@@ -74,7 +132,16 @@ export class IncidentService implements OnApplicationBootstrap {
 
   onApplicationBootstrap(): void {
     this.consumers.register({
-      subjects: ['alert.raised.v1', 'alert.cleared.v1', 'workflow.task.assigned.v1', 'workflow.stage.completed.v1'],
+      subjects: [
+        'alert.raised.v1',
+        'alert.cleared.v1',
+        'workflow.task.assigned.v1',
+        'workflow.stage.completed.v1',
+        'tenant.pack.activated.v1',
+        'maintenance.request.submitted.v1',
+        'maintenance.work_order.created.v1',
+        'maintenance.work_order.completed.v1',
+      ],
       handler: (event, q) => this.onEvent(event, q),
     });
   }
@@ -90,16 +157,25 @@ export class IncidentService implements OnApplicationBootstrap {
     ]);
   }
 
+  // --- categories -------------------------------------------------------------
+
+  private async category(q: Q, key: string): Promise<CategoryRow | null> {
+    const row = await q.maybeOne<CategoryRow>('SELECT key, name, description, workflow_key, notify_role, response_targets, pack_id FROM incident_categories WHERE key = $1', [key]);
+    return row ?? (key === DEFAULT_INCIDENT_CATEGORY ? GENERAL : null);
+  }
+
+  listCategories(user: Principal) {
+    return this.db.tx(user.tenantId, async (q) => {
+      const rows = await q.query<CategoryRow>('SELECT key, name, description, workflow_key, notify_role, response_targets, pack_id FROM incident_categories ORDER BY key');
+      return rows.some((r) => r.key === DEFAULT_INCIDENT_CATEGORY) ? rows : [GENERAL, ...rows];
+    });
+  }
+
   /**
-   * Creates an incident and announces it. With a `source` the insert is
-   * idempotent: a second attempt for the same alarm returns null and has no effect.
+   * Creates an incident and announces it. With a `source.id` the insert is
+   * idempotent: a second attempt for the same origin returns null and has no effect.
    */
-  private async open(
-    q: Q,
-    tenantId: string,
-    input: { title: string; description: string; severity: IncidentRow['severity']; deviceId: string | null; source: { type: 'alert' | 'manual'; id: string | null } },
-    actor: Actor,
-  ): Promise<IncidentRow | null> {
+  private async open(q: Q, tenantId: string, input: OpenInput, actor: Actor): Promise<IncidentRow | null> {
     if (input.source.id) {
       const existing = await q.maybeOne('SELECT 1 FROM incidents WHERE source_type = $1 AND source_id = $2', [input.source.type, input.source.id]);
       if (existing) return null;
@@ -113,15 +189,15 @@ export class IncidentService implements OnApplicationBootstrap {
     );
     const reference = `INC-${year}-${String(last_no).padStart(6, '0')}`;
     const incident = await q.maybeOne<IncidentRow>(
-      `INSERT INTO incidents (tenant_id, reference_no, title, description, severity, source_type, source_id, device_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO incidents (tenant_id, reference_no, title, description, severity, source_type, source_id, device_id, category, asset_id, site_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        ON CONFLICT DO NOTHING
        RETURNING ${COLUMNS}`,
-      [tenantId, reference, input.title, input.description, input.severity, input.source.type, input.source.id, input.deviceId],
+      [tenantId, reference, input.title, input.description, input.severity, input.source.type, input.source.id, input.deviceId, input.category.key, input.assetId, input.siteId],
     );
     if (!incident) return null;
 
-    await this.timeline(q, incident, 'created', input.source.type === 'alert' ? 'Incident raised automatically from an alarm' : 'Incident reported manually', actor);
+    await this.timeline(q, incident, 'created', describeOrigin(input.source.type), actor);
     await this.outbox.emit(q, {
       type: 'incident.created.v1',
       aggregateType: 'incident',
@@ -136,22 +212,64 @@ export class IncidentService implements OnApplicationBootstrap {
         source_id: incident.source_id,
         device_id: incident.device_id,
         created_at: incident.created_at.toISOString(),
+        category: incident.category,
+        asset_id: incident.asset_id,
+        workflow_key: input.category.workflow_key,
       },
     });
     return incident;
+  }
+
+  private notifyCreated(q: Q, incident: IncidentRow, role: string) {
+    return this.outbox.emit(q, {
+      type: 'notification.requested.v1',
+      aggregateType: 'incident',
+      aggregateId: incident.id,
+      tenantId: incident.tenant_id,
+      payload: {
+        dedupe_key: `incident-created:${incident.id}`,
+        channel: 'in_app',
+        category: 'incident.created',
+        external: false,
+        recipient_user_id: null,
+        recipient_role: role,
+        recipient_address: null,
+        subject: `${incident.severity.toUpperCase()} incident ${incident.reference_no}`,
+        body: incident.title,
+        reference_type: 'incident',
+        reference_id: incident.id,
+      },
+    });
   }
 
   // --- commands --------------------------------------------------------------
 
   create(user: Principal, input: z.infer<typeof CreateIncident>) {
     return this.db.tx(user.tenantId, async (q) => {
+      const category = await this.category(q, input.category);
+      if (!category) throw DomainError.invalid(`unknown incident category '${input.category}'`);
       const incident = await this.open(
         q,
         user.tenantId,
-        { title: input.title, description: input.description, severity: input.severity, deviceId: input.device_id, source: { type: 'manual', id: null } },
+        {
+          title: input.title,
+          description: input.description,
+          severity: input.severity,
+          deviceId: input.device_id,
+          assetId: input.asset_id,
+          siteId: input.site_id,
+          category,
+          source: { type: input.source_type, id: input.source_id },
+        },
         { id: user.userId, username: user.username },
       );
-      return incident!;
+      if (!incident) throw DomainError.conflict('duplicate_origin', 'an incident already exists for this origin');
+      // A report in a pack-defined category goes to the role responsible for it, unless the reporter holds
+      // that role. Reports in the default category are not announced, exactly as before categories existed.
+      if (category.key !== DEFAULT_INCIDENT_CATEGORY && !user.roles.includes(category.notify_role)) {
+        await this.notifyCreated(q, incident, category.notify_role);
+      }
+      return incident;
     });
   }
 
@@ -224,15 +342,19 @@ export class IncidentService implements OnApplicationBootstrap {
   // --- queries ---------------------------------------------------------------
 
   list(user: Principal, query: z.infer<typeof ListIncidents>) {
-    return this.db.tx(user.tenantId, (q) => {
+    return this.db.tx(user.tenantId, async (q) => {
       const statuses = query.status === 'active' ? ['open', 'acknowledged'] : query.status ? [query.status] : null;
-      return q.query<IncidentRow>(
+      const rows = await q.query<IncidentRow>(
         `SELECT ${COLUMNS} FROM incidents
           WHERE ($1::text[] IS NULL OR status = ANY($1)) AND ($2::text IS NULL OR severity = $2)
+            AND ($3::text IS NULL OR category = $3) AND ($4::uuid IS NULL OR asset_id = $4)
           ORDER BY created_at DESC
-          LIMIT $3 OFFSET $4`,
-        [statuses, query.severity ?? null, query.limit, query.offset],
+          LIMIT $5 OFFSET $6`,
+        [statuses, query.severity ?? null, query.category ?? null, query.asset_id ?? null, query.limit, query.offset],
       );
+      const targets = new Map((await q.query<{ key: string; response_targets: Record<string, number> }>('SELECT key, response_targets FROM incident_categories')).map((c) => [c.key, c.response_targets]));
+      const now = new Date();
+      return rows.map((r) => ({ ...r, response_overdue: responseOverdue(r, targets.get(r.category) ?? {}, now) }));
     });
   }
 
@@ -240,7 +362,8 @@ export class IncidentService implements OnApplicationBootstrap {
     return this.db.tx(user.tenantId, async (q) => {
       const incident = await this.load(q, id);
       const timeline = await q.query('SELECT id, entry_type, message, actor_username, occurred_at FROM incident_timeline WHERE incident_id = $1 ORDER BY occurred_at, id', [id]);
-      return { ...incident, timeline };
+      const category = await this.category(q, incident.category);
+      return { ...incident, response_overdue: responseOverdue(incident, category?.response_targets ?? {}, new Date()), category_name: category?.name ?? incident.category, timeline };
     });
   }
 
@@ -249,12 +372,15 @@ export class IncidentService implements OnApplicationBootstrap {
       const bySeverity = await q.query('SELECT severity, count(*)::int AS count FROM incidents GROUP BY severity ORDER BY severity');
       const byStatus = await q.query('SELECT status, count(*)::int AS count FROM incidents GROUP BY status ORDER BY status');
       const active = await q.query(`SELECT severity, count(*)::int AS count FROM incidents WHERE status IN ('open', 'acknowledged') GROUP BY severity ORDER BY severity`);
+      const byCategory = await q.query(
+        `SELECT category, count(*)::int AS count, count(*) FILTER (WHERE status IN ('open', 'acknowledged'))::int AS active FROM incidents GROUP BY category ORDER BY category`,
+      );
       const response = await q.one(
         `SELECT round(avg(extract(epoch FROM acknowledged_at - created_at))::numeric, 1) AS avg_seconds_to_acknowledge,
                 count(*) FILTER (WHERE acknowledged_at IS NOT NULL)::int AS acknowledged
            FROM incidents`,
       );
-      return { by_severity: bySeverity, by_status: byStatus, active_by_severity: active, response };
+      return { by_severity: bySeverity, by_status: byStatus, active_by_severity: active, by_category: byCategory, response };
     });
   }
 
@@ -266,40 +392,24 @@ export class IncidentService implements OnApplicationBootstrap {
         const p = event.payload as EventPayload<'alert.raised.v1'>;
         if (!p.create_incident) return;
         const where = p.device_name ?? 'a device';
-        const title =
-          p.kind === 'threshold'
-            ? `${p.rule_name} at ${where}`
-            : `${where} is offline`;
+        const title = p.kind === 'threshold' ? `${p.rule_name} at ${where}` : `${where} is offline`;
         const description =
           p.kind === 'threshold'
             ? `${p.sensor_kind} reading ${p.value} ${p.operator} threshold ${p.threshold} (observed ${p.triggered_at}).`
             : `No telemetry received from ${where} within the expected interval.`;
+        // An alarm must never be lost to configuration: an unknown category falls back to `general`.
+        const category = (p.incident_category ? await this.category(q, p.incident_category) : null) ?? (await this.category(q, DEFAULT_INCIDENT_CATEGORY)) ?? GENERAL;
         const incident = await this.open(
           q,
           event.tenant_id,
-          { title, description, severity: p.severity, deviceId: p.device_id, source: { type: 'alert', id: p.alert_id } },
+          { title, description, severity: p.severity, deviceId: p.device_id, assetId: p.asset_id ?? null, siteId: null, category, source: { type: 'alert', id: p.alert_id } },
           { id: null, username: null },
         );
         if (!incident) return;
-        await this.outbox.emit(q, {
-          type: 'notification.requested.v1',
-          aggregateType: 'incident',
-          aggregateId: incident.id,
-          tenantId: event.tenant_id,
-          payload: {
-            dedupe_key: `incident-created:${incident.id}`,
-            channel: 'in_app',
-            category: 'incident.created',
-            external: false,
-            recipient_user_id: null,
-            recipient_role: Roles.DutyOfficer,
-            recipient_address: null,
-            subject: `${incident.severity.toUpperCase()} incident ${incident.reference_no}`,
-            body: incident.title,
-            reference_type: 'incident',
-            reference_id: incident.id,
-          },
-        });
+        if (p.incident_category && category.key !== p.incident_category) {
+          await this.timeline(q, incident, 'note', `The alarm named the category '${p.incident_category}', which is not configured; the incident was filed as ${category.key}.`);
+        }
+        await this.notifyCreated(q, incident, category.notify_role);
         return;
       }
       case 'alert.cleared.v1': {
@@ -366,6 +476,44 @@ export class IncidentService implements OnApplicationBootstrap {
         }
         return;
       }
+      case 'tenant.pack.activated.v1': {
+        const p = event.payload as EventPayload<'tenant.pack.activated.v1'>;
+        for (const raw of p.install.incident_categories) {
+          const c = PackIncidentCategory.parse(raw);
+          await q.exec(
+            `INSERT INTO incident_categories (tenant_id, key, name, description, workflow_key, notify_role, response_targets, pack_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             ON CONFLICT (tenant_id, key) DO UPDATE
+               SET name = EXCLUDED.name, description = EXCLUDED.description, workflow_key = EXCLUDED.workflow_key, notify_role = EXCLUDED.notify_role,
+                   response_targets = EXCLUDED.response_targets, pack_id = EXCLUDED.pack_id, updated_at = now()`,
+            [event.tenant_id, c.key, c.name, c.description, c.workflow_key, c.notify_role, JSON.stringify(c.response_targets), p.pack_id],
+          );
+        }
+        return;
+      }
+      // Maintenance raised because of an incident is recorded on that incident's timeline.
+      case 'maintenance.request.submitted.v1': {
+        const p = event.payload as EventPayload<'maintenance.request.submitted.v1'>;
+        await this.maintenanceNote(q, p.origin_type, p.origin_id, `Maintenance request ${p.reference_no} raised (${p.priority} priority)`);
+        return;
+      }
+      case 'maintenance.work_order.created.v1': {
+        const p = event.payload as EventPayload<'maintenance.work_order.created.v1'>;
+        await this.maintenanceNote(q, p.origin_type, p.origin_id, `Work order ${p.reference_no} created after approval of the maintenance request`);
+        return;
+      }
+      case 'maintenance.work_order.completed.v1': {
+        const p = event.payload as EventPayload<'maintenance.work_order.completed.v1'>;
+        // The work being finished does not resolve the incident: the responsible role confirms that in its response process.
+        await this.maintenanceNote(q, p.origin_type, p.origin_id, `Work order ${p.reference_no} completed by ${p.completed_by_username}: ${p.summary}`);
+        return;
+      }
     }
+  }
+
+  private async maintenanceNote(q: Q, originType: string, originId: string | null, message: string): Promise<void> {
+    if (originType !== 'incident' || !originId || !/^[0-9a-f-]{36}$/i.test(originId)) return;
+    const incident = await q.maybeOne<IncidentRow>(`SELECT ${COLUMNS} FROM incidents WHERE id = $1`, [originId]);
+    if (incident) await this.timeline(q, incident, 'maintenance', message);
   }
 }

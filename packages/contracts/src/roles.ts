@@ -12,6 +12,13 @@ export const Roles = {
   Analyst: 'analyst',
   Auditor: 'auditor',
   TenantAdmin: 'tenant_admin',
+  // Roles introduced with the maintenance capability and the industry packs (TITAN v3).
+  ProductionSupervisor: 'production_supervisor',
+  MaintenancePlanner: 'maintenance_planner',
+  MaintenanceTechnician: 'maintenance_technician',
+  FacilityManager: 'facility_manager',
+  /** Member of the organisation who may raise service requests and follow their own. Not staff. */
+  ServiceRequester: 'service_requester',
   DrOperator: 'dr_operator',
   PlatformAdmin: 'platform_admin',
   /** Machine identity (client-credentials service accounts). */
@@ -38,4 +45,20 @@ export const STAFF_ROLES: readonly string[] = [
   Roles.Analyst,
   Roles.Auditor,
   Roles.TenantAdmin,
+  Roles.ProductionSupervisor,
+  Roles.MaintenancePlanner,
+  Roles.MaintenanceTechnician,
+  Roles.FacilityManager,
 ];
+
+/** Roles that take charge of an incident (acknowledge, assign, annotate). */
+export const INCIDENT_RESPONDER_ROLES: readonly string[] = [
+  Roles.DutyOfficer,
+  Roles.IncidentCommander,
+  Roles.ProductionSupervisor,
+  Roles.FacilityManager,
+  Roles.MaintenancePlanner,
+];
+
+/** Roles that may close a resolved incident. */
+export const INCIDENT_CLOSER_ROLES: readonly string[] = [Roles.IncidentCommander, Roles.ProductionSupervisor, Roles.FacilityManager];

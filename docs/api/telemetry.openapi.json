@@ -51,7 +51,7 @@
             "bearer": []
           }
         ],
-        "summary": "Latest reading per device and sensor",
+        "summary": "Latest reading per device and sensor; optionally only some sensor kinds or one device",
         "tags": [
           "telemetry"
         ]

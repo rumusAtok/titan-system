@@ -1,0 +1,161 @@
+{
+  "schema_version": 1,
+  "id": "manufacturing",
+  "version": "1.0.0",
+  "name": "Manufacturing",
+  "industry": "Manufacturing",
+  "description": "Production equipment condition monitoring: vibration, bearing temperature and spindle load telemetry, alarms that open equipment incidents, and corrective maintenance from request and approval to a completed work order.",
+  "requires": { "capabilities": ["iot", "maintenance"], "packs": [{ "id": "platform-core" }] },
+  "roles": [
+    { "role": "production_supervisor", "name": "Production supervisor", "description": "Acknowledges equipment incidents and approves maintenance requests for the line", "permissions": ["incidents.acknowledge", "maintenance.requests.approve", "maintenance.requests.raise"] },
+    { "role": "maintenance_planner", "name": "Maintenance planner", "description": "Plans and assigns work orders and resolves equipment incidents", "permissions": ["maintenance.work_orders.assign", "incidents.resolve", "maintenance.requests.raise"] },
+    { "role": "maintenance_technician", "name": "Maintenance technician", "description": "Carries out and completes assigned work orders", "permissions": ["maintenance.work_orders.execute"] }
+  ],
+  "navigation": [
+    { "key": "manufacturing", "label": "Production equipment", "href": "/manufacturing/", "icon": "factory", "audience": "staff", "order": 300 },
+    { "key": "maintenance", "label": "Maintenance", "href": "/maintenance/", "icon": "wrench", "audience": "staff", "order": 400 }
+  ],
+  "workflows": [
+    {
+      "key": "equipment-incident-response",
+      "name": "Equipment incident response",
+      "subject_type": "incident",
+      "definition": {
+        "allow_return": false,
+        "applicant_notifications": [],
+        "stages": [
+          { "key": "acknowledge", "name": "Acknowledge equipment incident", "type": "single", "roles": ["production_supervisor"], "sla_hours": 0.5, "escalate_to_role": "maintenance_planner" },
+          { "key": "resolve", "name": "Confirm equipment restored", "type": "single", "roles": ["maintenance_planner"], "sla_hours": 24 }
+        ]
+      }
+    },
+    {
+      "key": "maintenance-approval",
+      "name": "Maintenance request approval",
+      "subject_type": "maintenance_request",
+      "definition": {
+        "allow_return": false,
+        "applicant_notifications": [],
+        "stages": [
+          { "key": "supervisor_approval", "name": "Supervisor approval", "type": "single", "roles": ["production_supervisor"], "sla_hours": 4, "escalate_to_role": "maintenance_planner" }
+        ]
+      }
+    }
+  ],
+  "asset_categories": [
+    { "code": "PRODUCTION_LINE", "name": "Production line", "description": "A line or cell that groups machines" },
+    {
+      "code": "CNC_MACHINE",
+      "name": "CNC machine",
+      "description": "Computer-controlled machine tool",
+      "attribute_schema": {
+        "version": 1,
+        "fields": [
+          { "name": "manufacturer", "label": "Manufacturer", "type": "text", "required": true, "max_length": 100 },
+          { "name": "model", "label": "Model", "type": "text", "required": true, "max_length": 100 },
+          { "name": "serial_number", "label": "Serial number", "type": "text", "required": true, "max_length": 100 },
+          { "name": "rated_power_kw", "label": "Rated power", "type": "number", "min": 0, "max": 10000, "unit": "kW" },
+          { "name": "commissioning_year", "label": "Commissioning year", "type": "number", "min": 1950, "max": 2100 },
+          { "name": "synthetic", "label": "Synthetic demonstration record", "type": "boolean" }
+        ]
+      }
+    },
+    {
+      "code": "CONVEYOR",
+      "name": "Conveyor",
+      "attribute_schema": {
+        "version": 1,
+        "fields": [
+          { "name": "length_m", "label": "Length", "type": "number", "required": true, "min": 0, "max": 10000, "unit": "m" },
+          { "name": "belt_type", "label": "Belt type", "type": "select", "options": ["flat", "modular", "roller"] },
+          { "name": "synthetic", "label": "Synthetic demonstration record", "type": "boolean" }
+        ]
+      }
+    }
+  ],
+  "sensor_profiles": [
+    {
+      "key": "machine-condition-monitor",
+      "name": "Machine condition monitor",
+      "device_type": "machine-condition-monitor",
+      "expected_interval_seconds": 5,
+      "sensors": [
+        { "kind": "vibration_rms", "label": "Vibration velocity (RMS)", "unit": "mm/s", "min_valid": 0, "max_valid": 100 },
+        { "kind": "bearing_temperature", "label": "Bearing temperature", "unit": "degC", "min_valid": -20, "max_valid": 200 },
+        { "kind": "spindle_load", "label": "Spindle load", "unit": "%", "min_valid": 0, "max_valid": 150 }
+      ]
+    }
+  ],
+  "alert_rules": [
+    { "name": "High machine vibration", "sensor_kind": "vibration_rms", "operator": "gt", "threshold": { "$config": "vibration_warning_mm_s" }, "clear_threshold": { "$config": "vibration_warning_clear_mm_s" }, "severity": "warning", "create_incident": true, "incident_category": "equipment" },
+    { "name": "Critical machine vibration", "sensor_kind": "vibration_rms", "operator": "gt", "threshold": { "$config": "vibration_critical_mm_s" }, "clear_threshold": { "$config": "vibration_critical_clear_mm_s" }, "severity": "critical", "create_incident": true, "incident_category": "equipment" },
+    { "name": "Bearing over-temperature", "sensor_kind": "bearing_temperature", "operator": "gt", "threshold": { "$config": "bearing_temperature_limit_c" }, "clear_threshold": { "$config": "bearing_temperature_clear_c" }, "severity": "warning", "create_incident": true, "incident_category": "equipment" }
+  ],
+  "incident_categories": [
+    { "key": "equipment", "name": "Equipment", "description": "Raised from machine condition alarms or reported by production staff", "workflow_key": "equipment-incident-response", "notify_role": "production_supervisor", "response_targets": { "critical": 10, "warning": 30 } }
+  ],
+  "request_types": [
+    {
+      "key": "equipment-repair",
+      "name": "Equipment repair",
+      "description": "Corrective maintenance of a production machine",
+      "subject_type": "maintenance_request",
+      "workflow_key": "maintenance-approval",
+      "default_priority": "high",
+      "requester_roles": ["production_supervisor", "maintenance_planner", "maintenance_technician", "tenant_admin"],
+      "auto_from_incident_category": "equipment",
+      "detail_fields": [
+        { "name": "symptom", "label": "Symptom", "type": "textarea", "max_length": 2000 },
+        { "name": "production_impact", "label": "Production impact", "type": "select", "options": ["none", "reduced", "stopped"] }
+      ]
+    }
+  ],
+  "dashboards": [
+    {
+      "key": "manufacturing",
+      "title": "Production equipment",
+      "description": "Machine condition, equipment incidents and corrective maintenance (synthetic data).",
+      "widgets": [
+        { "id": "equipment-incidents-open", "title": "Equipment incidents not yet acknowledged", "type": "stat", "dataset": "incidents_by_category", "filters": { "category": "equipment", "status": "open" }, "value": { "column": "incidents", "agg": "sum" } },
+        { "id": "work-orders-open", "title": "Work orders not completed", "type": "stat", "dataset": "maintenance_work_orders", "filters": { "pack_id": "manufacturing", "open": true }, "value": { "column": "work_orders", "agg": "sum" } },
+        { "id": "repair-hours", "title": "Mean time to repair", "type": "stat", "dataset": "work_order_turnaround", "filters": { "pack_id": "manufacturing" }, "value": { "column": "avg_repair_hours", "agg": "avg" }, "unit": "h" },
+        { "id": "vibration-trend", "title": "Vibration velocity, 5-minute averages", "type": "timeseries", "dataset": "metric_trend", "filters": { "sensor_kind": "vibration_rms" }, "x": "bucket", "y": "avg_value", "series": "device_name", "unit": "mm/s", "span": 2 },
+        { "id": "temperature-trend", "title": "Bearing temperature, 5-minute averages", "type": "timeseries", "dataset": "metric_trend", "filters": { "sensor_kind": "bearing_temperature" }, "x": "bucket", "y": "avg_value", "series": "device_name", "unit": "degC", "span": 1 },
+        { "id": "work-orders-by-status", "title": "Work orders by status", "type": "bar", "dataset": "maintenance_work_orders", "filters": { "pack_id": "manufacturing" }, "category": "status", "value": { "column": "work_orders", "agg": "sum" } },
+        {
+          "id": "repair-turnaround",
+          "title": "Corrective maintenance turnaround",
+          "type": "table",
+          "dataset": "work_order_turnaround",
+          "filters": { "pack_id": "manufacturing" },
+          "span": 2,
+          "columns": [
+            { "column": "request_type", "label": "Request type" },
+            { "column": "completed", "label": "Completed" },
+            { "column": "avg_request_to_completion_hours", "label": "Request to completion (h)" },
+            { "column": "avg_repair_hours", "label": "Repair time (h)" }
+          ]
+        }
+      ]
+    }
+  ],
+  "query_templates": ["maintenance_backlog", "metric_peaks"],
+  "ai_tools": ["maintenance_backlog", "equipment_readings"],
+  "config_schema": [
+    { "name": "vibration_warning_mm_s", "label": "Vibration warning level", "type": "number", "required": true, "min": 0, "max": 100, "unit": "mm/s", "help": "Default 7.1 mm/s. Set it from the machine class and your own baseline measurements." },
+    { "name": "vibration_warning_clear_mm_s", "label": "Vibration warning clears below", "type": "number", "required": true, "min": 0, "max": 100, "unit": "mm/s" },
+    { "name": "vibration_critical_mm_s", "label": "Vibration critical level", "type": "number", "required": true, "min": 0, "max": 100, "unit": "mm/s" },
+    { "name": "vibration_critical_clear_mm_s", "label": "Vibration critical clears below", "type": "number", "required": true, "min": 0, "max": 100, "unit": "mm/s" },
+    { "name": "bearing_temperature_limit_c", "label": "Bearing temperature limit", "type": "number", "required": true, "min": 0, "max": 200, "unit": "degC" },
+    { "name": "bearing_temperature_clear_c", "label": "Bearing temperature clears below", "type": "number", "required": true, "min": 0, "max": 200, "unit": "degC" }
+  ],
+  "config_defaults": {
+    "vibration_warning_mm_s": 7.1,
+    "vibration_warning_clear_mm_s": 6.0,
+    "vibration_critical_mm_s": 11.2,
+    "vibration_critical_clear_mm_s": 9.0,
+    "bearing_temperature_limit_c": 85,
+    "bearing_temperature_clear_c": 80
+  },
+  "lifecycle": { "upgrades_from": [], "changes": ["Initial version"] }
+}

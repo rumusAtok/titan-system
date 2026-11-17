@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "id": "facilities",
+  "version": "1.0.0",
+  "name": "Facilities management",
+  "industry": "Facilities and property management",
+  "description": "Buildings and building systems, service requests from occupants, inspection findings, configurable approval, and assigned maintenance work through to completion. Needs no device or sensor.",
+  "requires": { "capabilities": ["maintenance"], "packs": [{ "id": "platform-core" }] },
+  "roles": [
+    { "role": "facility_manager", "name": "Facility manager", "description": "Reviews service requests and inspection findings, assigns work, manages facility incidents", "permissions": ["maintenance.requests.approve", "maintenance.work_orders.assign", "incidents.acknowledge", "incidents.resolve", "assets.manage"] },
+    { "role": "maintenance_technician", "name": "Maintenance technician", "description": "Carries out and completes assigned work orders, records inspection findings", "permissions": ["maintenance.work_orders.execute", "maintenance.requests.raise"] },
+    { "role": "service_requester", "name": "Service requester", "description": "Occupant who raises service requests and follows their own", "permissions": ["maintenance.requests.raise", "maintenance.requests.track_own"] }
+  ],
+  "navigation": [
+    { "key": "facilities", "label": "Facilities", "href": "/facilities/", "icon": "building", "roles": ["facility_manager", "maintenance_technician", "service_requester", "tenant_admin", "asset_manager", "auditor", "analyst"], "order": 350 },
+    { "key": "maintenance", "label": "Maintenance", "href": "/maintenance/", "icon": "wrench", "audience": "staff", "order": 400 }
+  ],
+  "workflows": [
+    {
+      "key": "facility-request-approval",
+      "name": "Facility service request approval",
+      "subject_type": "service_request",
+      "definition": {
+        "allow_return": false,
+        "applicant_notifications": [],
+        "stages": [
+          { "key": "facility_review", "name": "Facility review", "type": "single", "roles": ["facility_manager"], "sla_hours": 8, "escalate_to_role": "tenant_admin" },
+          { "key": "budget_approval", "name": "Budget approval", "type": "single", "roles": ["tenant_admin"], "sla_hours": 48, "condition": { "field": "estimated_cost", "op": "gte", "value": 5000 } }
+        ]
+      }
+    },
+    {
+      "key": "inspection-follow-up",
+      "name": "Inspection finding follow-up",
+      "subject_type": "maintenance_request",
+      "definition": {
+        "allow_return": false,
+        "applicant_notifications": [],
+        "stages": [{ "key": "facility_review", "name": "Facility review", "type": "single", "roles": ["facility_manager"], "sla_hours": 24 }]
+      }
+    },
+    {
+      "key": "facility-incident-response",
+      "name": "Facility incident response",
+      "subject_type": "incident",
+      "definition": {
+        "allow_return": false,
+        "applicant_notifications": [],
+        "stages": [
+          { "key": "acknowledge", "name": "Acknowledge facility incident", "type": "single", "roles": ["facility_manager"], "sla_hours": 1 },
+          { "key": "resolve", "name": "Confirm facility restored", "type": "single", "roles": ["facility_manager"], "sla_hours": 48 }
+        ]
+      }
+    }
+  ],
+  "asset_categories": [
+    {
+      "code": "BUILDING",
+      "name": "Building",
+      "attribute_schema": {
+        "version": 1,
+        "fields": [
+          { "name": "floor_area_m2", "label": "Floor area", "type": "number", "required": true, "min": 1, "max": 10000000, "unit": "m2" },
+          { "name": "floors", "label": "Floors", "type": "number", "min": 1, "max": 300 },
+          { "name": "year_built", "label": "Year built", "type": "number", "min": 1700, "max": 2100 },
+          { "name": "use", "label": "Use", "type": "select", "options": ["office", "warehouse", "production", "residential", "retail", "education", "healthcare"] },
+          { "name": "synthetic", "label": "Synthetic demonstration record", "type": "boolean" }
+        ]
+      }
+    },
+    {
+      "code": "HVAC_UNIT",
+      "name": "HVAC unit",
+      "attribute_schema": {
+        "version": 1,
+        "fields": [
+          { "name": "manufacturer", "label": "Manufacturer", "type": "text", "required": true, "max_length": 100 },
+          { "name": "cooling_capacity_kw", "label": "Cooling capacity", "type": "number", "required": true, "min": 0, "max": 100000, "unit": "kW" },
+          { "name": "refrigerant", "label": "Refrigerant", "type": "select", "options": ["R-32", "R-410A", "R-134a", "R-290", "other"] },
+          { "name": "synthetic", "label": "Synthetic demonstration record", "type": "boolean" }
+        ]
+      }
+    },
+    { "code": "ELEVATOR", "name": "Elevator" },
+    { "code": "FIRE_SAFETY_SYSTEM", "name": "Fire safety system" }
+  ],
+  "incident_categories": [
+    { "key": "facility", "name": "Facility", "description": "Building or building-system incidents reported by staff", "workflow_key": "facility-incident-response", "notify_role": "facility_manager", "response_targets": { "critical": 30, "warning": 240 } }
+  ],
+  "request_types": [
+    {
+      "key": "facility-service-request",
+      "name": "Facility service request",
+      "description": "Something in a building needs attention",
+      "subject_type": "service_request",
+      "workflow_key": "facility-request-approval",
+      "default_priority": "normal",
+      "requester_roles": ["service_requester", "facility_manager", "maintenance_technician", "tenant_admin"],
+      "detail_fields": [
+        { "name": "location", "label": "Location in the building", "type": "text", "required": true, "max_length": 300 },
+        { "name": "service_category", "label": "Category", "type": "select", "required": true, "options": ["hvac", "electrical", "plumbing", "cleaning", "safety", "other"] },
+        { "name": "estimated_cost", "label": "Estimated cost", "type": "number", "min": 0, "max": 100000000, "help": "Requests estimated at 5000 or more also need budget approval." }
+      ]
+    },
+    {
+      "key": "inspection-finding",
+      "name": "Inspection finding",
+      "description": "A defect or risk found during a planned inspection",
+      "subject_type": "maintenance_request",
+      "workflow_key": "inspection-follow-up",
+      "default_priority": "normal",
+      "requester_roles": ["facility_manager", "maintenance_technician", "tenant_admin"],
+      "detail_fields": [
+        { "name": "inspection_type", "label": "Inspection type", "type": "select", "required": true, "options": ["fire_safety", "hvac", "electrical", "structural", "elevator", "general"] },
+        { "name": "finding", "label": "Finding", "type": "textarea", "required": true, "max_length": 4000 }
+      ]
+    }
+  ],
+  "dashboards": [
+    {
+      "key": "facilities",
+      "title": "Facilities",
+      "description": "Service requests, inspection findings and the maintenance work they lead to (synthetic data).",
+      "widgets": [
+        { "id": "facility-work-orders-open", "title": "Work orders not completed", "type": "stat", "dataset": "maintenance_work_orders", "filters": { "pack_id": "facilities", "open": true }, "value": { "column": "work_orders", "agg": "sum" } },
+        { "id": "facility-requests-waiting", "title": "Requests waiting for approval", "type": "stat", "dataset": "maintenance_requests", "filters": { "pack_id": "facilities", "status": "submitted" }, "value": { "column": "requests", "agg": "sum" } },
+        { "id": "facility-completion-hours", "title": "Request to completion", "type": "stat", "dataset": "work_order_turnaround", "filters": { "pack_id": "facilities" }, "value": { "column": "avg_request_to_completion_hours", "agg": "avg" }, "unit": "h" },
+        { "id": "facility-requests-by-type", "title": "Requests by type", "type": "bar", "dataset": "maintenance_requests", "filters": { "pack_id": "facilities" }, "category": "request_type", "value": { "column": "requests", "agg": "sum" } },
+        {
+          "id": "facility-turnaround",
+          "title": "Completed work by request type",
+          "type": "table",
+          "dataset": "work_order_turnaround",
+          "filters": { "pack_id": "facilities" },
+          "span": 2,
+          "columns": [
+            { "column": "request_type", "label": "Request type" },
+            { "column": "completed", "label": "Completed" },
+            { "column": "avg_request_to_completion_hours", "label": "Request to completion (h)" },
+            { "column": "avg_repair_hours", "label": "Work time (h)" }
+          ]
+        }
+      ]
+    }
+  ],
+  "query_templates": ["maintenance_backlog"],
+  "ai_tools": ["maintenance_backlog"],
+  "lifecycle": { "upgrades_from": [], "changes": ["Initial version"] }
+}

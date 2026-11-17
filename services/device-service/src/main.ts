@@ -1,10 +1,10 @@
 import { Controller, Get, HttpCode, Inject, Module, Param, Patch, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, type Principal, RequireRoles } from '@titan/authentication';
-import { Roles, STAFF_ROLES } from '@titan/contracts';
-import { bootstrapService, PlatformModule, uuidParam, ZBody, ZQuery } from '@titan/platform';
+import { Capabilities, Roles, STAFF_ROLES } from '@titan/contracts';
+import { bootstrapService, PlatformModule, RequireCapability, uuidParam, ZBody, ZQuery } from '@titan/platform';
 import type { z } from 'zod';
-import { DeviceService, ListDevices, RegisterDevice, UpdateConfig } from './device.service.js';
+import { CreateProfile, DeviceService, ListDevices, RegisterDevice, UpdateConfig } from './device.service.js';
 
 const WRITERS = [Roles.IotOperator, Roles.TenantAdmin];
 
@@ -12,8 +12,27 @@ const WRITERS = [Roles.IotOperator, Roles.TenantAdmin];
 @ApiBearerAuth()
 @Controller()
 @RequireRoles(...STAFF_ROLES)
+@RequireCapability(Capabilities.Iot)
 class DeviceController {
   constructor(@Inject(DeviceService) private readonly devices: DeviceService) {}
+
+  @Get('sensor-profiles')
+  @ApiOperation({ summary: 'Sensor profiles: kinds of device and the metrics (kind, unit, plausible range) each reports' })
+  listProfiles(@CurrentUser() user: Principal) {
+    return this.devices.listProfiles(user);
+  }
+
+  @Post('sensor-profiles')
+  @RequireRoles(...WRITERS)
+  createProfile(@CurrentUser() user: Principal, @ZBody(CreateProfile) body: z.infer<typeof CreateProfile>) {
+    return this.devices.createProfile(user, body);
+  }
+
+  @Get('metric-types')
+  @ApiOperation({ summary: 'Every metric kind and unit the tenant has registered, from profiles and devices' })
+  metricTypes(@CurrentUser() user: Principal) {
+    return this.devices.metricTypes(user);
+  }
 
   @Get('devices')
   list(@CurrentUser() user: Principal, @ZQuery(ListDevices) query: z.infer<typeof ListDevices>) {
@@ -28,7 +47,7 @@ class DeviceController {
 
   @Post('devices')
   @RequireRoles(...WRITERS)
-  @ApiOperation({ summary: 'Register an IoT device and its sensors' })
+  @ApiOperation({ summary: 'Register a device from a sensor profile, or with an explicit device type and sensors' })
   register(@CurrentUser() user: Principal, @ZBody(RegisterDevice) body: z.infer<typeof RegisterDevice>) {
     return this.devices.register(user, body);
   }

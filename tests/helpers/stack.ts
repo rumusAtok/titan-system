@@ -7,9 +7,9 @@ import { jetstream, jetstreamManager } from '@nats-io/jetstream';
 import { connect, headers, type NatsConnection } from '@nats-io/transport-node';
 import mqtt, { type MqttClient } from 'mqtt';
 import pg from 'pg';
-import { api, claimsOf, config, rawApi, sleep, TENANT_A, TENANT_B, tokenFor, waitFor } from '../../scripts/lib/titan-client.mjs';
+import { api, claimsOf, config, rawApi, sleep, TENANT_A, TENANT_B, TENANT_C, TENANT_D, tokenFor, waitFor } from '../../scripts/lib/titan-client.mjs';
 
-export { api, claimsOf, config, rawApi, sleep, TENANT_A, TENANT_B, tokenFor, waitFor };
+export { api, claimsOf, config, rawApi, sleep, TENANT_A, TENANT_B, TENANT_C, TENANT_D, tokenFor, waitFor };
 
 export const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
@@ -159,6 +159,52 @@ export async function closeConnections(): Promise<void> {
   mqttClient = undefined;
   await nats?.close().catch(() => undefined);
   nats = undefined;
+}
+
+// --- industry packs, maintenance ---------------------------------------------------
+
+/** Waits until a service's own entitlement projection answers `expected` for the user's tenant on `path`. */
+export async function waitForAccess(user: string, path: string, expected: 200 | 403, what = `${path} to answer ${expected}`) {
+  return waitFor(async () => (await rawApi(user, 'GET', path)).status === expected, { timeoutMs: 30_000, intervalMs: 300, what });
+}
+
+/** Waits for the active definition of a workflow and returns it. */
+export async function activeDefinition(user: string, key: string, accept: (d: any) => boolean = () => true) {
+  return waitFor(
+    async () => {
+      const found = (await api(user, 'GET', '/api/workflow/definitions')).find((d: any) => d.key === key && d.active);
+      return found && accept(found) ? found : null;
+    },
+    { timeoutMs: 30_000, intervalMs: 300, what: `the expected active definition of workflow '${key}'` },
+  );
+}
+
+/** Waits for a pending workflow task on any subject (request, incident, case) and returns it. */
+export async function pendingSubjectTask(reviewer: string, subjectId: string, stageKey: string) {
+  return waitFor(
+    async () => (await api(reviewer, 'GET', `/api/workflow/tasks?subject_id=${subjectId}`)).find((t: any) => t.stage_key === stageKey) ?? null,
+    { timeoutMs: 30_000, intervalMs: 300, what: `a pending '${stageKey}' task for ${reviewer}` },
+  );
+}
+
+export async function decideSubject(reviewer: string, subjectId: string, stageKey: string, decision: 'approve' | 'reject', comment?: string) {
+  const task = await pendingSubjectTask(reviewer, subjectId, stageKey);
+  return api(reviewer, 'POST', `/api/workflow/tasks/${task.id}/decision`, { decision, comment });
+}
+
+/** Waits until the request has the expected status and returns it (with its work order, when there is one). */
+export async function requestStatus(user: string, requestId: string, expected: string, needsWorkOrder = false) {
+  return waitFor(
+    async () => {
+      const r = await api(user, 'GET', `/api/maintenance/requests/${requestId}`);
+      return r.status === expected && (!needsWorkOrder || r.work_order) ? r : null;
+    },
+    { timeoutMs: 30_000, intervalMs: 300, what: `request to become '${expected}'` },
+  );
+}
+
+export async function userId(username: string): Promise<string> {
+  return claimsOf(await tokenFor(username)).sub as string;
 }
 
 // --- government workflow helpers --------------------------------------------------

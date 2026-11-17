@@ -17,9 +17,11 @@ import { BACKUP_DIR, compose, containerHealth, iso, parseFlags, psql, stamp, too
 
 /** Tables whose row counts are recorded as a coarse completeness check. */
 export const KEY_TABLES = {
-  titan_tenant: ['tenants', 'departments'],
+  // Industry-pack registry and tenant configuration (TITAN v3).
+  titan_tenant: ['tenants', 'departments', 'sites', 'pack_catalog', 'tenant_packs', 'tenant_pack_history'],
   titan_case: ['cases', 'case_status_history'],
-  titan_workflow: ['workflow_instances', 'workflow_tasks', 'workflow_decisions'],
+  titan_workflow: ['workflow_definitions', 'workflow_instances', 'workflow_tasks', 'workflow_decisions'],
+  titan_maintenance: ['request_types', 'maintenance_requests', 'work_orders', 'tenant_entitlements'],
   titan_audit: ['audit_events'],
   titan_asset: ['assets'],
   titan_incident: ['incidents'],

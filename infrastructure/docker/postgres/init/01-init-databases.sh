@@ -12,7 +12,7 @@ set -euo pipefail
 
 : "${DB_DEV_PASSWORD:?DB_DEV_PASSWORD must be set}"
 
-SERVICES="tenant case workflow notification audit asset device telemetry alert incident analytics pipeline ai"
+SERVICES="tenant case workflow notification audit asset device telemetry alert incident maintenance analytics pipeline ai"
 
 run_sql() {
   psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$1"

@@ -35,6 +35,7 @@ Each document separates two things:
 | 22 | Architecture decision records | [adr/](adr/README.md) |
 | 23 | Known limitations and risk register | [risk-register.md](risk-register.md) |
 | 24 | Future development roadmap | [roadmap.md](roadmap.md) |
+| 25 | Industry packs and platform layers (v3) | [architecture/industry-packs.md](architecture/industry-packs.md) |
 
 Generated evidence (not hand-written): OpenAPI documents in `api/`, recovery drill reports in
 `../infrastructure/disaster-recovery/reports/`, performance smoke results in

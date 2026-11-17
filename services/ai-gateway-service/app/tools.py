@@ -48,6 +48,9 @@ class ToolContext:
     urls: dict[str, str]
     timeout: float
     embed: Callable[[list[str]], Awaitable[list[list[float]]]] | None = None
+    # Tools the caller's tenant may use: the core tools plus those its active industry packs register.
+    # None (unit tests only) means "no restriction".
+    available: frozenset[str] | None = None
 
     async def get(self, service: str, path: str, params: dict[str, Any] | None = None) -> Any:
         return await self._call("GET", service, path, params=params)
@@ -173,6 +176,38 @@ async def water_levels(ctx: ToolContext, _: NoArgs) -> ToolResult:
     return ToolResult(rows, [{"type": "telemetry", "id": "latest/water_level", "title": "Latest water-level readings (synthetic sensor data)", "as_of": newest}], empty=not rows)
 
 
+MACHINE_METRICS = ("vibration_rms", "bearing_temperature", "spindle_load")
+
+
+async def equipment_readings(ctx: ToolContext, _: NoArgs) -> ToolResult:
+    """Latest machine condition readings. Read with the user's token from telemetry-service."""
+    latest = await ctx.get("telemetry", "/latest", {"sensor_kind": ",".join(MACHINE_METRICS)})
+    rows = [
+        {"device": r.get("device_name"), "serial_no": r.get("serial_no"), "metric": r.get("sensor_kind"), "value": r.get("value"), "unit": r.get("unit"),
+         "quality": r.get("quality"), "observed_at": r.get("observed_at")}
+        for r in latest
+        if r.get("sensor_kind") in MACHINE_METRICS
+    ]
+    newest = max((r["observed_at"] for r in rows if r["observed_at"]), default=None)
+    return ToolResult(rows, [{"type": "telemetry", "id": "latest/machine_condition", "title": "Latest machine condition readings (synthetic sensor data)", "as_of": newest}], empty=not rows)
+
+
+async def maintenance_backlog(ctx: ToolContext, args: LimitArgs) -> ToolResult:
+    """Work orders that are not completed. Read with the user's token from maintenance-service."""
+    orders = await ctx.get("maintenance", "/work-orders", {"status": "active", "limit": args.limit})
+    rows = [
+        {"id": o.get("id"), "reference_no": o.get("reference_no"), "title": o.get("title"), "priority": o.get("priority"), "status": o.get("status"),
+         "request_type": o.get("request_type"), "industry": o.get("pack_id"), "asset": o.get("asset_name"), "assignee": o.get("assignee_username"), "created_at": o.get("created_at")}
+        for o in orders
+    ]
+    # Titles are written by people (or copied from alarms): untrusted input for a model.
+    from .guard import scan
+
+    flags = sorted({f for r in rows for f in scan(str(r.get("title") or ""))})
+    sources = [{"type": "work_order", "id": r["id"], "title": f"{r['reference_no']}: {r['title']}", "as_of": r.get("created_at")} for r in rows]
+    return ToolResult(rows, sources, empty=not rows, flags=flags)
+
+
 async def search_documents(ctx: ToolContext, args: SearchArgs) -> ToolResult:
     hits, mode = await retrieval.search(ctx.db, ctx.user, args.query, args.limit, ctx.embed)
     usable = [h for h in hits if not h["flagged"]]
@@ -210,8 +245,13 @@ class Tool:
     handler: Callable[[ToolContext, Any], Awaitable[ToolResult]]
     # Offered to the model for selection. Proposals are only created through an explicit request path.
     selectable: bool = True
+    # True: part of the universal core, available to every tenant.
+    # False: an industry tool, available only to tenants whose active packs register it.
+    core: bool = True
 
 
+# Every tool is implemented and reviewed here. An industry pack can only make an existing
+# tool available to a tenant by naming it; it cannot add a tool or change what one does.
 TOOLS: dict[str, Tool] = {
     t.name: t
     for t in [
@@ -219,7 +259,9 @@ TOOLS: dict[str, Tool] = {
         Tool("list_incidents", "List incidents. Arguments: status (active|open|acknowledged|resolved|closed), severity (info|warning|critical), limit.", ListIncidentsArgs, list_incidents),
         Tool("get_incident", "One incident with its timeline. Arguments: incident_id (UUID).", IncidentArgs, get_incident),
         Tool("workflow_bottlenecks", "Workflow stages with the most waiting or overdue tasks. Arguments: limit.", LimitArgs, workflow_bottlenecks),
-        Tool("water_levels", "Latest water-level reading of every sensor. No arguments.", NoArgs, water_levels),
+        Tool("water_levels", "Latest water-level reading of every sensor. No arguments.", NoArgs, water_levels, core=False),
+        Tool("equipment_readings", "Latest machine condition readings: vibration, bearing temperature, spindle load. No arguments.", NoArgs, equipment_readings, core=False),
+        Tool("maintenance_backlog", "Maintenance work orders that are not completed, most urgent first. Arguments: limit.", LimitArgs, maintenance_backlog, core=False),
         Tool("search_documents", "Search approved reference documents (procedures, guidelines). Arguments: query, limit.", SearchArgs, search_documents),
         Tool("run_query_template", "Run an approved analytical query. Arguments: name, params.", TemplateArgs, run_query_template),
         Tool("propose_incident_note", "Propose adding a note to an incident, for human approval.", ProposeNoteArgs, propose_incident_note, selectable=False),
@@ -227,10 +269,20 @@ TOOLS: dict[str, Tool] = {
 }
 
 SELECTABLE = {name for name, tool in TOOLS.items() if tool.selectable}
+CORE_TOOLS = frozenset(name for name, tool in TOOLS.items() if tool.core)
+INDUSTRY_TOOLS = frozenset(name for name, tool in TOOLS.items() if not tool.core)
 
 
-def catalog_for_prompt() -> str:
-    return "\n".join(f"- {t.name}: {t.description}" for t in TOOLS.values() if t.selectable)
+def available_tools(registered_by_packs: frozenset[str] | set[str] | None) -> frozenset[str]:
+    """Tools a tenant may use: the core, plus the industry tools its active packs register.
+
+    `None` (entitlements could not be determined) gives the core only: fail closed.
+    """
+    return CORE_TOOLS | (INDUSTRY_TOOLS & frozenset(registered_by_packs or ()))
+
+
+def catalog_for_prompt(available: frozenset[str] | None = None) -> str:
+    return "\n".join(f"- {t.name}: {t.description}" for t in TOOLS.values() if t.selectable and (available is None or t.name in available))
 
 
 async def execute(ctx: ToolContext, name: str, arguments: dict[str, Any], use_case: str, selected_by: str, correlation_id: str | None) -> ToolResult:
@@ -241,6 +293,10 @@ async def execute(ctx: ToolContext, name: str, arguments: dict[str, Any], use_ca
         tool = TOOLS.get(name)
         if tool is None:
             raise ToolError("rejected", f"'{name}' is not an available tool")
+        # Enforced here, whoever chose the tool (a rule, an endpoint or a model): an industry
+        # tool runs only for a tenant whose active packs register it.
+        if ctx.available is not None and name not in ctx.available:
+            raise ToolError("rejected", f"the tool '{name}' is not available to your organisation")
         try:
             args = tool.args.model_validate(arguments)
         except ValidationError as exc:
@@ -276,22 +332,36 @@ _PROCEDURAL = re.compile(
 )
 
 
-def route_by_rules(message: str) -> tuple[str, dict[str, Any]]:
-    """Deterministic tool selection, used when no model is available or its plan was rejected."""
+_MAINTENANCE = re.compile(r"\b(work orders?|maintenance|repairs?|technicians?)\b")
+_MACHINE = re.compile(r"\b(vibration|bearings?|spindle|machines?|machining|equipment|cnc)\b")
+
+
+def route_by_rules(message: str, available: frozenset[str] | None = None) -> tuple[str, dict[str, Any]]:
+    """Deterministic tool selection, used when no model is available or its plan was rejected.
+
+    Rules are tried in order; a rule whose tool the tenant may not use is
+    skipped, so a question about another industry's data ends at the document
+    search (which finds nothing) instead of at a tool the tenant does not have.
+    """
     text = message.lower()
+    usable = lambda name: available is None or name in available  # noqa: E731
     found = _UUID_ANYWHERE.search(message)
     if found and "incident" in text:
         return "get_incident", {"incident_id": found.group(0)}
     # "What should / how do I / what is the procedure" asks about guidance, not about live records.
     if _PROCEDURAL.search(text):
         return "search_documents", {"query": message[:300], "limit": 4}
+    if _MAINTENANCE.search(text) and usable("maintenance_backlog"):
+        return "maintenance_backlog", {"limit": 10}
     if re.search(r"\b(bottleneck|backlog|overdue|pending|waiting|stuck|slow|delay)", text) or ("workflow" in text and "incident" not in text):
         return "workflow_bottlenecks", {"limit": 5}
     if "incident" in text or "alarm" in text or "emergenc" in text:
         severity = next((s for s in ("critical", "warning") if s in text), None)
         status = "resolved" if "resolved" in text else "closed" if "closed" in text else "active"
         return "list_incidents", {"status": status, "severity": severity, "limit": 10}
-    if re.search(r"\b(water|river|flood|level|gauge|rainfall)\b", text) and not re.search(r"\b(procedure|sop|policy|guideline|should|how do)\b", text):
+    if _MACHINE.search(text) and usable("equipment_readings"):
+        return "equipment_readings", {}
+    if re.search(r"\b(water|river|flood|level|gauge|rainfall)\b", text) and not re.search(r"\b(procedure|sop|policy|guideline|should|how do)\b", text) and usable("water_levels"):
         return "water_levels", {}
     if re.search(r"\b(kpi|summary|overview|dashboard|how many|status of operations|turnaround|availability|assets?)\b", text):
         return "kpi_summary", {}

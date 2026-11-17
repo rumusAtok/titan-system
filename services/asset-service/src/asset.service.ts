@@ -1,6 +1,7 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, type OnApplicationBootstrap } from '@nestjs/common';
 import type { Principal } from '@titan/authentication';
-import { Db, DomainError, Outbox, type Q } from '@titan/platform';
+import { canonicalJson, type EventEnvelope, type EventPayload, type FieldSpec, FieldSpecs, packActor, PackAssetCategory, validateFieldValues } from '@titan/contracts';
+import { Db, DomainError, EventConsumers, Outbox, type Q } from '@titan/platform';
 import { z } from 'zod';
 
 export const AssetStatus = z.enum(['planned', 'active', 'under_maintenance', 'retired']);
@@ -21,7 +22,11 @@ export function canTransition(from: string, to: string): boolean {
 export const CreateCategory = z.object({
   code: z.string().regex(/^[A-Z0-9_]{2,32}$/),
   name: z.string().min(2).max(200),
+  description: z.string().max(500).default(''),
 });
+
+/** Publishes the next attribute schema version of a category. */
+export const PublishAttributeSchema = z.object({ fields: FieldSpecs.min(1) });
 
 export const CreateAsset = z.object({
   code: z.string().min(2).max(64),
@@ -35,6 +40,8 @@ export const CreateAsset = z.object({
   attributes: z.record(z.string(), z.unknown()).default({}),
   commissioned_on: z.iso.date().nullable().default(null),
   next_maintenance_due: z.iso.datetime({ offset: true }).nullable().default(null),
+  /** Site (plant, building, line) the asset is at. */
+  site_id: z.uuid().nullable().default(null),
 });
 
 export const UpdateAsset = z.object({
@@ -57,6 +64,9 @@ export const RecordMaintenance = z.object({
 export const ListAssets = z.object({
   status: AssetStatus.optional(),
   category: z.string().max(32).optional(),
+  /** Only assets whose category belongs to this industry pack. */
+  pack: z.string().max(64).optional(),
+  site_id: z.uuid().optional(),
   q: z.string().max(100).optional(),
   limit: z.coerce.number().int().min(1).max(500).default(200),
   offset: z.coerce.number().int().min(0).default(0),
@@ -80,32 +90,123 @@ export interface AssetRow {
   version: number;
   created_at: Date;
   updated_at: Date;
+  attribute_schema_version: number | null;
+  site_id: string | null;
 }
 
 const COLUMNS = `a.id, a.tenant_id, a.code, a.name, a.category_id, a.parent_id, a.status, a.condition, a.latitude, a.longitude, a.attributes,
-  a.commissioned_on::text AS commissioned_on, a.last_maintained_at, a.next_maintenance_due, a.version, a.created_at, a.updated_at`;
+  a.commissioned_on::text AS commissioned_on, a.last_maintained_at, a.next_maintenance_due, a.version, a.created_at, a.updated_at,
+  a.attribute_schema_version, a.site_id`;
+
+interface SchemaRow {
+  version: number;
+  fields: FieldSpec[];
+}
+
+const SYSTEM_ACTOR = 'maintenance-service';
 
 @Injectable()
-export class AssetService {
+export class AssetService implements OnApplicationBootstrap {
   constructor(
     @Inject(Db) private readonly db: Db,
     @Inject(Outbox) private readonly outbox: Outbox,
+    @Inject(EventConsumers) private readonly consumers: EventConsumers,
   ) {}
+
+  onApplicationBootstrap(): void {
+    this.consumers.register({
+      subjects: ['tenant.pack.activated.v1', 'maintenance.work_order.started.v1', 'maintenance.work_order.completed.v1', 'maintenance.work_order.cancelled.v1'],
+      handler: (event, q) => this.onEvent(event, q),
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Categories and attribute schemas
+  // ---------------------------------------------------------------------------
 
   listCategories(user: Principal) {
     return this.db.tx(user.tenantId, (q) =>
       q.query(
-        `SELECT c.id, c.code, c.name, (SELECT count(*)::int FROM assets a WHERE a.category_id = c.id) AS asset_count
-           FROM asset_categories c ORDER BY c.code`,
+        `SELECT c.id, c.code, c.name, c.description, c.pack_id,
+                (SELECT count(*)::int FROM assets a WHERE a.category_id = c.id) AS asset_count,
+                s.version AS attribute_schema_version, s.fields AS attribute_fields
+           FROM asset_categories c LEFT JOIN asset_attribute_schemas s ON s.category_id = c.id AND s.active
+          ORDER BY c.code`,
       ),
     );
   }
 
   createCategory(user: Principal, input: z.infer<typeof CreateCategory>) {
     return this.db.tx(user.tenantId, (q) =>
-      q.one('INSERT INTO asset_categories (tenant_id, code, name) VALUES ($1, $2, $3) RETURNING id, code, name', [user.tenantId, input.code, input.name]),
+      q.one('INSERT INTO asset_categories (tenant_id, code, name, description) VALUES ($1, $2, $3, $4) RETURNING id, code, name, description', [
+        user.tenantId,
+        input.code,
+        input.name,
+        input.description,
+      ]),
     );
   }
+
+  private activeSchema(q: Q, categoryId: string): Promise<SchemaRow | null> {
+    return q.maybeOne<SchemaRow>('SELECT version, fields FROM asset_attribute_schemas WHERE category_id = $1 AND active', [categoryId]);
+  }
+
+  /** Puts `version` in force for the category, creating it when it does not exist. A stored version is never rewritten. */
+  private async activateSchema(q: Q, tenantId: string, categoryId: string, version: number, fields: FieldSpec[], actor: string): Promise<'unchanged' | 'activated' | 'conflict'> {
+    const stored = await q.maybeOne<{ id: string; fields: FieldSpec[]; active: boolean }>(
+      'SELECT id, fields, active FROM asset_attribute_schemas WHERE category_id = $1 AND version = $2 FOR UPDATE',
+      [categoryId, version],
+    );
+    if (stored && canonicalJson(stored.fields) !== canonicalJson(fields)) return 'conflict';
+    if (stored?.active) return 'unchanged';
+    await q.exec('UPDATE asset_attribute_schemas SET active = false WHERE category_id = $1 AND active', [categoryId]);
+    if (stored) await q.exec('UPDATE asset_attribute_schemas SET active = true WHERE id = $1', [stored.id]);
+    else {
+      await q.exec('INSERT INTO asset_attribute_schemas (tenant_id, category_id, version, fields, active, created_by) VALUES ($1, $2, $3, $4, true, $5)', [
+        tenantId,
+        categoryId,
+        version,
+        JSON.stringify(fields),
+        actor,
+      ]);
+    }
+    return 'activated';
+  }
+
+  publishAttributeSchema(user: Principal, categoryCode: string, input: z.infer<typeof PublishAttributeSchema>) {
+    return this.db.tx(user.tenantId, async (q) => {
+      const category = await q.maybeOne<{ id: string; code: string }>('SELECT id, code FROM asset_categories WHERE code = $1 FOR UPDATE', [categoryCode]);
+      if (!category) throw DomainError.notFound('asset category');
+      const { next } = await q.one<{ next: number }>('SELECT COALESCE(max(version), 0) + 1 AS next FROM asset_attribute_schemas WHERE category_id = $1', [category.id]);
+      await this.activateSchema(q, user.tenantId, category.id, next, input.fields, user.username);
+      return { category_code: category.code, version: next, fields: input.fields };
+    });
+  }
+
+  listAttributeSchemas(user: Principal, categoryCode: string) {
+    return this.db.tx(user.tenantId, (q) =>
+      q.query(
+        `SELECT s.version, s.fields, s.active, s.created_by, s.created_at,
+                (SELECT count(*)::int FROM assets a WHERE a.category_id = s.category_id AND a.attribute_schema_version = s.version) AS assets_on_version
+           FROM asset_attribute_schemas s JOIN asset_categories c ON c.id = s.category_id
+          WHERE c.code = $1 ORDER BY s.version DESC`,
+        [categoryCode],
+      ),
+    );
+  }
+
+  /** Validates attributes against the schema in force for the category. Returns the schema version, or null when the category has none. */
+  private async checkAttributes(q: Q, categoryId: string, attributes: Record<string, unknown>): Promise<number | null> {
+    const schema = await this.activeSchema(q, categoryId);
+    if (!schema) return null;
+    const issues = validateFieldValues(schema.fields, attributes);
+    if (issues.length) throw DomainError.invalid(`asset attributes do not match the category's attribute schema (version ${schema.version})`, issues);
+    return schema.version;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Assets
+  // ---------------------------------------------------------------------------
 
   private async load(q: Q, id: string, lock = false): Promise<AssetRow> {
     const row = await q.maybeOne<AssetRow>(`SELECT ${COLUMNS} FROM assets a WHERE a.id = $1 ${lock ? 'FOR UPDATE' : ''}`, [id]);
@@ -119,9 +220,11 @@ export class AssetService {
       const category = await q.maybeOne<{ id: string; code: string }>('SELECT id, code FROM asset_categories WHERE code = $1', [input.category_code]);
       if (!category) throw DomainError.invalid(`unknown category '${input.category_code}'`);
       if (input.parent_id && !(await q.maybeOne('SELECT 1 FROM assets WHERE id = $1', [input.parent_id]))) throw DomainError.invalid('parent asset not found');
+      const schemaVersion = await this.checkAttributes(q, category.id, input.attributes);
       const row = await q.one<AssetRow>(
-        `INSERT INTO assets AS a (tenant_id, code, name, category_id, parent_id, status, condition, latitude, longitude, attributes, commissioned_on, next_maintenance_due)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        `INSERT INTO assets AS a (tenant_id, code, name, category_id, parent_id, status, condition, latitude, longitude, attributes, commissioned_on, next_maintenance_due,
+                                  attribute_schema_version, site_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
          RETURNING ${COLUMNS}`,
         [
           user.tenantId,
@@ -136,6 +239,8 @@ export class AssetService {
           JSON.stringify(input.attributes),
           input.commissioned_on,
           input.next_maintenance_due,
+          schemaVersion,
+          input.site_id,
         ],
       );
       await q.exec('INSERT INTO asset_status_history (tenant_id, asset_id, from_status, to_status, changed_by, note) VALUES ($1, $2, NULL, $3, $4, $5)', [
@@ -179,13 +284,21 @@ export class AssetService {
         params.push(query.category);
         where.push(`c.code = $${params.length}`);
       }
+      if (query.pack) {
+        params.push(query.pack);
+        where.push(`c.pack_id = $${params.length}`);
+      }
+      if (query.site_id) {
+        params.push(query.site_id);
+        where.push(`a.site_id = $${params.length}`);
+      }
       if (query.q) {
         params.push(`%${query.q.replace(/[%_\\]/g, '\\$&')}%`);
         where.push(`(a.name ILIKE $${params.length} OR a.code ILIKE $${params.length})`);
       }
       params.push(query.limit, query.offset);
       return q.query(
-        `SELECT ${COLUMNS}, c.code AS category_code, c.name AS category_name,
+        `SELECT ${COLUMNS}, c.code AS category_code, c.name AS category_name, c.pack_id AS pack_id,
                 (a.status <> 'retired' AND a.next_maintenance_due IS NOT NULL AND a.next_maintenance_due < now()) AS maintenance_overdue
            FROM assets a JOIN asset_categories c ON c.id = a.category_id
           ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
@@ -199,7 +312,11 @@ export class AssetService {
   get(user: Principal, id: string) {
     return this.db.tx(user.tenantId, async (q) => {
       const asset = await this.load(q, id);
-      const category = await q.one('SELECT code, name FROM asset_categories WHERE id = $1', [asset.category_id]);
+      const category = await q.one(
+        `SELECT c.code, c.name, c.pack_id, s.version AS attribute_schema_version, s.fields AS attribute_fields
+           FROM asset_categories c LEFT JOIN asset_attribute_schemas s ON s.category_id = c.id AND s.active WHERE c.id = $1`,
+        [asset.category_id],
+      );
       const children = await q.query('SELECT id, code, name, status, condition FROM assets WHERE parent_id = $1 ORDER BY code', [id]);
       // Path from the root of the hierarchy down to this asset.
       const ancestors = await q.query(
@@ -223,10 +340,12 @@ export class AssetService {
       const latitude = input.latitude === undefined ? current.latitude : input.latitude;
       const longitude = input.longitude === undefined ? current.longitude : input.longitude;
       if ((latitude === null) !== (longitude === null)) throw DomainError.invalid('latitude and longitude must be given together');
+      // Changed attributes are validated against the schema now in force; untouched attributes keep the version they had.
+      const schemaVersion = input.attributes ? await this.checkAttributes(q, current.category_id, input.attributes) : current.attribute_schema_version;
       return q.one<AssetRow>(
-        `UPDATE assets a SET name = $2, attributes = $3, latitude = $4, longitude = $5, version = a.version + 1, updated_at = now()
+        `UPDATE assets a SET name = $2, attributes = $3, latitude = $4, longitude = $5, attribute_schema_version = $6, version = a.version + 1, updated_at = now()
           WHERE a.id = $1 RETURNING ${COLUMNS}`,
-        [id, input.name ?? current.name, JSON.stringify(input.attributes ?? current.attributes), latitude, longitude],
+        [id, input.name ?? current.name, JSON.stringify(input.attributes ?? current.attributes), latitude, longitude, schemaVersion],
       );
     });
   }
@@ -285,6 +404,118 @@ export class AssetService {
       });
       return updated;
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Events: pack templates, and the effect of maintenance work on an asset
+  // ---------------------------------------------------------------------------
+
+  private async onEvent(event: EventEnvelope, q: Q): Promise<void> {
+    switch (event.event_type) {
+      case 'tenant.pack.activated.v1':
+        return this.installPackCategories(event.tenant_id, event.payload as EventPayload<'tenant.pack.activated.v1'>, q);
+      case 'maintenance.work_order.started.v1': {
+        const p = event.payload as EventPayload<'maintenance.work_order.started.v1'>;
+        if (!p.asset_id) return;
+        const asset = await q.maybeOne<AssetRow>(`SELECT ${COLUMNS} FROM assets a WHERE a.id = $1 FOR UPDATE`, [p.asset_id]);
+        if (asset?.status === 'active') await this.systemStatus(q, asset, 'under_maintenance', `Work order ${p.reference_no} started`);
+        return;
+      }
+      case 'maintenance.work_order.cancelled.v1': {
+        const p = event.payload as EventPayload<'maintenance.work_order.cancelled.v1'>;
+        if (!p.asset_id) return;
+        const asset = await q.maybeOne<AssetRow>(`SELECT ${COLUMNS} FROM assets a WHERE a.id = $1 FOR UPDATE`, [p.asset_id]);
+        if (asset?.status === 'under_maintenance' && (await this.underMaintenanceFor(q, asset.id, p.reference_no))) {
+          await this.systemStatus(q, asset, 'active', `Work order ${p.reference_no} cancelled`);
+        }
+        return;
+      }
+      case 'maintenance.work_order.completed.v1': {
+        const p = event.payload as EventPayload<'maintenance.work_order.completed.v1'>;
+        if (!p.asset_id) return;
+        const asset = await q.maybeOne<AssetRow>(`SELECT ${COLUMNS} FROM assets a WHERE a.id = $1 FOR UPDATE`, [p.asset_id]);
+        if (!asset || asset.status === 'retired') return;
+        const updated = await q.one<AssetRow>(
+          `UPDATE assets a SET condition = COALESCE($2, a.condition), last_maintained_at = GREATEST(COALESCE(a.last_maintained_at, $3), $3),
+                  version = a.version + 1, updated_at = now()
+            WHERE a.id = $1 RETURNING ${COLUMNS}`,
+          [asset.id, p.condition_after, p.completed_at],
+        );
+        await this.outbox.emit(q, {
+          type: 'asset.maintenance.updated.v1',
+          aggregateType: 'asset',
+          aggregateId: asset.id,
+          tenantId: asset.tenant_id,
+          payload: {
+            asset_id: asset.id,
+            code: asset.code,
+            condition: updated.condition,
+            last_maintained_at: updated.last_maintained_at ? updated.last_maintained_at.toISOString() : null,
+            next_maintenance_due: updated.next_maintenance_due ? updated.next_maintenance_due.toISOString() : null,
+          },
+        });
+        // Only an asset this work order took out of service is returned to service.
+        if (asset.status === 'under_maintenance' && (await this.underMaintenanceFor(q, asset.id, p.reference_no))) {
+          await this.systemStatus(q, updated, 'active', `Work order ${p.reference_no} completed`);
+        }
+        return;
+      }
+    }
+  }
+
+  private async underMaintenanceFor(q: Q, assetId: string, workOrderReference: string): Promise<boolean> {
+    const last = await q.maybeOne<{ note: string | null }>(
+      `SELECT note FROM asset_status_history WHERE asset_id = $1 AND to_status = 'under_maintenance' ORDER BY changed_at DESC, id DESC LIMIT 1`,
+      [assetId],
+    );
+    return last?.note === `Work order ${workOrderReference} started`;
+  }
+
+  private async systemStatus(q: Q, asset: AssetRow, to: string, note: string): Promise<void> {
+    await q.exec('UPDATE assets SET status = $2, version = version + 1, updated_at = now() WHERE id = $1', [asset.id, to]);
+    await q.exec('INSERT INTO asset_status_history (tenant_id, asset_id, from_status, to_status, changed_by, note) VALUES ($1, $2, $3, $4, $5, $6)', [
+      asset.tenant_id,
+      asset.id,
+      asset.status,
+      to,
+      SYSTEM_ACTOR,
+      note,
+    ]);
+    await this.outbox.emit(q, {
+      type: 'asset.status_changed.v1',
+      aggregateType: 'asset',
+      aggregateId: asset.id,
+      tenantId: asset.tenant_id,
+      payload: { asset_id: asset.id, code: asset.code, from: asset.status, to, changed_by: SYSTEM_ACTOR },
+    });
+  }
+
+  /**
+   * Installs the asset categories of an industry pack and puts the pack's
+   * attribute schema version in force. Idempotent. A category that exists
+   * without an owner is adopted; one owned by another pack is left alone.
+   */
+  private async installPackCategories(tenantId: string, p: EventPayload<'tenant.pack.activated.v1'>, q: Q): Promise<void> {
+    const actor = packActor(p.pack_id, p.version);
+    for (const raw of p.install.asset_categories) {
+      const template = PackAssetCategory.parse(raw);
+      let category = await q.maybeOne<{ id: string; pack_id: string | null }>('SELECT id, pack_id FROM asset_categories WHERE code = $1 FOR UPDATE', [template.code]);
+      if (!category) {
+        category = await q.one<{ id: string; pack_id: string | null }>(
+          'INSERT INTO asset_categories (tenant_id, code, name, description, pack_id) VALUES ($1, $2, $3, $4, $5) RETURNING id, pack_id',
+          [tenantId, template.code, template.name, template.description, p.pack_id],
+        );
+      } else if (category.pack_id === null || category.pack_id === p.pack_id) {
+        await q.exec('UPDATE asset_categories SET name = $2, description = $3, pack_id = $4 WHERE id = $1', [category.id, template.name, template.description, p.pack_id]);
+      } else {
+        continue;
+      }
+      if (template.attribute_schema) {
+        const result = await this.activateSchema(q, tenantId, category.id, template.attribute_schema.version, template.attribute_schema.fields, actor);
+        // A stored schema version is immutable; a pack that changes fields must raise the version.
+        if (result === 'conflict') throw new Error(`pack ${p.pack_id}@${p.version}: attribute schema ${template.code} v${template.attribute_schema.version} differs from the stored version`);
+      }
+    }
   }
 
   summary(user: Principal) {

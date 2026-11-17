@@ -7,7 +7,8 @@
 // 3. creates one more transaction AFTER the backup (it must be absent after the
 //    restore: that is the data-loss window a backup-only recovery has);
 // 4. restores the backup into an ISOLATED, empty PostgreSQL instance;
-// 5. verifies checksums, row counts and the recorded transactions in the restore;
+// 5. verifies checksums, row counts and the recorded transactions in the restore,
+//    including industry-pack configuration and a maintenance request with its work order;
 // 6. starts a real case-service against the restored database and performs
 //    application operations (read an approved case, create a new one);
 // 7. records the observed restore time and data-loss window in a report.
@@ -22,6 +23,10 @@ import { tokenFor } from '../lib/titan-client.mjs';
 const RESTORE_HOST = 'postgres-restore';
 const CHECK_CONTAINER = 'titan-restore-check';
 const CHECK_PORT = 18090;
+
+// Tenant whose industry configuration (manufacturing + facilities) is verified after the restore.
+const PACK_ADMIN = 'maya.admin';
+const PACK_TENANT = '33333333-3333-4333-8333-333333333333';
 
 const report = new Report('backup-restore', { rto_seconds: 4 * 3600, rpo_seconds: 24 * 3600, note: 'Targets for recovery from backup alone (no standby): restore within 4 h; loss bounded by the backup interval.' });
 const e = report.data.evidence;
@@ -51,6 +56,24 @@ try {
     const asset = await api('amy.assets', 'POST', '/api/asset/assets', { code: `DRR-${tag}`, name: `Restore drill asset ${tag}`, category_code: 'DRAINAGE', status: 'active' });
     e.transactions_before_backup = { approved_case: approved, in_review_case: inReview, asset: { id: asset.id, code: asset.code } };
     return `2 cases (1 approved, 1 in review), 1 asset`;
+  });
+
+  // Industry configuration and a business record of another industry: they must come back too.
+  await report.step('Record industry-pack configuration and a maintenance transaction (before the backup)', async () => {
+    const packs = (await api(PACK_ADMIN, 'GET', '/api/tenant/packs')).map((p) => ({ pack_id: p.pack_id, version: p.version, status: p.status, config: p.config }));
+    const request = await api('rita.requester', 'POST', '/api/maintenance/requests', {
+      request_type: 'facility-service-request',
+      title: `Restore drill service request ${tag}`,
+      details: { location: 'Restore drill', service_category: 'other', estimated_cost: 100 },
+    });
+    const task = await waitFor(async () => (await api('fred.facilities', 'GET', `/api/workflow/tasks?subject_id=${request.id}`))[0], { timeoutMs: 30_000, what: 'the approval task of the service request' });
+    await api('fred.facilities', 'POST', `/api/workflow/tasks/${task.id}/decision`, { decision: 'approve' });
+    const approved = await waitFor(async () => {
+      const r = await api('rita.requester', 'GET', `/api/maintenance/requests/${request.id}`);
+      return r.status === 'approved' && r.work_order ? r : null;
+    }, { timeoutMs: 30_000, what: 'the service request to be approved with a work order' });
+    e.industry_before_backup = { tenant: PACK_TENANT, packs, maintenance_request: { id: request.id, reference_no: request.reference_no }, work_order: { id: approved.work_order.id, reference_no: approved.work_order.reference_no } };
+    return `${packs.filter((p) => p.status === 'active').map((p) => `${p.pack_id}@${p.version}`).join(', ')}; request ${request.reference_no} approved, work order ${approved.work_order.reference_no}`;
   });
 
   // Let asynchronous effects of those transactions (notifications, audit) settle so they are in the backup.
@@ -138,6 +161,28 @@ try {
     const rls = psql(RESTORE_HOST, 'titan_case', "SELECT relrowsecurity FROM pg_class WHERE relname = 'cases'");
     report.check(rls === 't', 'row-level security is not enabled on the restored cases table');
     return 'cases, decisions, pending task, asset, audit records, identity store and RLS present';
+  });
+
+  await report.step('Verify industry-pack configuration and industry records in the restore', async () => {
+    const x = e.industry_before_backup;
+    // Pack activation, version and tenant configuration, exactly as recorded.
+    const restoredPacks = JSON.parse(psql(RESTORE_HOST, 'titan_tenant', `SELECT COALESCE(json_agg(json_build_object('pack_id', pack_id, 'version', version, 'status', status, 'config', config) ORDER BY pack_id), '[]') FROM tenant_packs WHERE tenant_id = '${x.tenant}'`));
+    const canonical = (list) => JSON.stringify([...list].sort((a, b) => a.pack_id.localeCompare(b.pack_id)).map((p) => [p.pack_id, p.version, p.status, JSON.stringify(Object.entries(p.config ?? {}).sort())]));
+    report.check(canonical(restoredPacks) === canonical(x.packs), `pack configuration differs after the restore: ${JSON.stringify(restoredPacks)}`);
+    // The immutable catalogue and the change history.
+    report.check(Number(psql(RESTORE_HOST, 'titan_tenant', "SELECT count(*) FROM pack_catalog WHERE pack_id = 'manufacturing'")) >= 2, 'pack catalogue versions are missing');
+    report.check(Number(psql(RESTORE_HOST, 'titan_tenant', `SELECT count(*) FROM tenant_pack_history WHERE tenant_id = '${x.tenant}'`)) >= x.packs.length, 'pack history is missing');
+    // What the packs installed in the owning services.
+    report.check(Number(psql(RESTORE_HOST, 'titan_workflow', `SELECT count(*) FROM workflow_definitions WHERE tenant_id = '${x.tenant}' AND key = 'facility-request-approval' AND active`)) === 1, 'the pack-installed workflow definition is missing');
+    report.check(Number(psql(RESTORE_HOST, 'titan_maintenance', `SELECT count(*) FROM request_types WHERE tenant_id = '${x.tenant}' AND pack_id = 'facilities'`)) >= 1, 'the pack-installed request types are missing');
+    const entitled = psql(RESTORE_HOST, 'titan_maintenance', `SELECT 'maintenance' = ANY(capabilities) FROM tenant_entitlements WHERE tenant_id = '${x.tenant}'`);
+    report.check(entitled === 't', 'the entitlement projection of maintenance-service was not restored');
+    // The business records and their process.
+    report.check(psql(RESTORE_HOST, 'titan_maintenance', `SELECT status FROM maintenance_requests WHERE id = '${x.maintenance_request.id}'`) === 'approved', 'the approved maintenance request is missing or changed');
+    report.check(psql(RESTORE_HOST, 'titan_maintenance', `SELECT reference_no FROM work_orders WHERE id = '${x.work_order.id}'`) === x.work_order.reference_no, 'the work order is missing');
+    report.check(psql(RESTORE_HOST, 'titan_workflow', `SELECT status FROM workflow_instances WHERE subject_type = 'service_request' AND subject_id = '${x.maintenance_request.id}'`) === 'approved', 'the approval process of the request is missing');
+    report.check(psql(RESTORE_HOST, 'titan_maintenance', "SELECT relrowsecurity FROM pg_class WHERE relname = 'work_orders'") === 't', 'row-level security is not enabled on the restored work orders table');
+    return `packs (${x.packs.length}), catalogue, history, installed definitions, entitlements, request ${x.maintenance_request.reference_no} and work order ${x.work_order.reference_no} restored`;
   });
 
   await report.step('Detect lost transactions', async () => {

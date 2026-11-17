@@ -8,17 +8,22 @@ import { Badge, Card, ErrorState, PageHeader, QueryView, SimulatedTag, Spinner, 
 import { api } from '@/lib/api';
 import { STAFF_ROLES, useAuth } from '@/lib/auth';
 import { ago, dateTime, duration, number, titleCase } from '@/lib/format';
+import { useWorkspace } from '@/lib/workspace';
 
 export default function DashboardPage() {
   const { hasRole } = useAuth();
   const router = useRouter();
-  const isStaff = hasRole(...STAFF_ROLES);
+  const workspace = useWorkspace();
+  // This page belongs to the government and flood-monitoring packs. A tenant without
+  // them (or a person without a staff role) starts in the first area its packs offer.
+  const offersThisPage = workspace.info ? workspace.navigation.some((n) => n.href === '/') : !workspace.isError ? null : true;
+  const isStaff = hasRole(...STAFF_ROLES) && offersThisPage !== false;
 
-  // People without a staff role have no dashboard: send them to their own area.
   useEffect(() => {
-    if (isStaff) return;
-    router.replace(hasRole('applicant') ? '/government/' : '/dr/');
-  }, [isStaff, hasRole, router]);
+    if (isStaff || offersThisPage === null) return;
+    const first = workspace.navigation[0]?.href;
+    router.replace(first && first !== '/' ? first : hasRole('applicant') ? '/government/' : '/dr/');
+  }, [isStaff, offersThisPage, hasRole, router, workspace.navigation]);
 
   const summary = useQuery({ queryKey: ['kpi', 'summary'], queryFn: () => api('/api/analytics/kpis/summary'), enabled: isStaff, refetchInterval: 30_000 });
   const turnaround = useQuery({ queryKey: ['kpi', 'turnaround'], queryFn: () => api('/api/analytics/kpis/approval-turnaround'), enabled: isStaff });

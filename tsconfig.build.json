@@ -15,6 +15,7 @@
     { "path": "services/telemetry-service" },
     { "path": "services/alert-service" },
     { "path": "services/incident-service" },
+    { "path": "services/maintenance-service" },
     { "path": "apps/gateway" }
   ]
 }

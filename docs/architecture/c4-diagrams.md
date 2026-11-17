@@ -36,7 +36,7 @@ flowchart TB
   end
 
   subgraph foundation[Enterprise foundation]
-    tenant[tenant-service]
+    tenant["tenant-service<br/><i>tenancy, sites, industry-pack registry, entitlements</i>"]
     case[case-service]
     wf[workflow-service]
     notif[notification-service]
@@ -46,7 +46,10 @@ flowchart TB
   subgraph operations[Enterprise operations]
     asset[asset-service]
     incident[incident-service]
+    maint["maintenance-service<br/><i>v3: requests, work orders</i>"]
   end
+
+  packs[["Industry pack manifests<br/><i>versioned JSON, shipped with tenant-service</i>"]]
 
   subgraph iot[Intelligent infrastructure]
     device[device-service]
@@ -62,7 +65,7 @@ flowchart TB
   end
 
   nats[("NATS JetStream<br/>TITAN_EVENTS, TITAN_DLQ")]
-  pg[("PostgreSQL 17<br/>13 service databases + keycloak")]
+  pg[("PostgreSQL 17<br/>14 service databases + keycloak")]
   lake[("Analytical lake<br/>Parquet volume")]
   ollama["Ollama<br/><i>optional</i>"]
 
@@ -79,9 +82,15 @@ flowchart TB
   pipe -->|writes| lake
   lake -->|reads| analytics
   pipe -->|service token| analytics
-  ai -->|user token| analytics & incident & telem
+  ai -->|user token| analytics & incident & telem & maint
+  analytics & ai -->|user token: entitlements| tenant
+  packs -->|catalogue| tenant
   ai -.-> ollama
 ```
+
+Since v3 every Node service keeps a local projection of tenant entitlements, fed by
+`tenant.entitlements.changed.v1`; pack templates reach the owning services as
+`tenant.pack.activated.v1` (see [industry packs](industry-packs.md)).
 
 ## Level 3 — components of a Node service
 

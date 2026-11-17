@@ -38,6 +38,12 @@ class ThresholdParams(BaseModel):
     threshold_pct: float = Field(90, ge=0, le=100)
 
 
+class MetricPeakParams(BaseModel):
+    model_config = {"extra": "forbid"}
+    sensor_kind: str = Field(pattern=r"^[a-z][a-z0-9_]{1,31}$")
+    hours: int = Field(24, ge=1, le=24)
+
+
 @dataclass(frozen=True)
 class QueryTemplate:
     name: str
@@ -98,6 +104,26 @@ TEMPLATES: dict[str, QueryTemplate] = {
             NoParams,
             "SELECT status, condition, assets, maintenance_overdue, due_within_30_days FROM kpi_asset_maintenance_status ORDER BY status, condition",
             "asset_maintenance_status",
+        ),
+        QueryTemplate(
+            "maintenance_backlog",
+            "Work orders not yet completed, by industry pack, request type and priority (most urgent first)",
+            LimitParams,
+            """SELECT pack_id, request_type, status, priority, work_orders FROM kpi_maintenance_work_orders
+                WHERE open
+                ORDER BY array_position(ARRAY['urgent', 'high', 'normal', 'low'], priority), work_orders DESC LIMIT %(limit)s""",
+            "maintenance_work_orders",
+        ),
+        QueryTemplate(
+            "metric_peaks",
+            "Highest value of one sensor metric per device within the trailing hours",
+            MetricPeakParams,
+            """SELECT device_id, device_name, sensor_kind, unit, max(max_value) AS peak_value, round(avg(avg_value)::numeric, 3) AS mean_value,
+                      sum(samples) AS samples
+                 FROM kpi_metric_trend
+                WHERE sensor_kind = %(sensor_kind)s AND bucket > now() - make_interval(hours => %(hours)s)
+                GROUP BY device_id, device_name, sensor_kind, unit ORDER BY peak_value DESC""",
+            "metric_trend",
         ),
     ]
 }

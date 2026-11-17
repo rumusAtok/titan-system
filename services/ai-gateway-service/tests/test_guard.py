@@ -106,7 +106,12 @@ class TestPlanValidation:
         with pytest.raises(guard.PlanRejected):
             guard.parse_plan('{"tool": "propose_incident_note", "arguments": {}}', self.allowed)
         # Every tool the model can choose is a read.
-        assert self.allowed == {"kpi_summary", "list_incidents", "get_incident", "workflow_bottlenecks", "water_levels", "search_documents", "run_query_template"}
+        assert self.allowed == {
+            "kpi_summary", "list_incidents", "get_incident", "workflow_bottlenecks", "water_levels", "search_documents", "run_query_template",
+            # Industry tools (TITAN v3), still read-only and still subject to the tenant's packs.
+            "equipment_readings", "maintenance_backlog",
+        }
+        assert "propose_incident_note" not in self.allowed
 
 
 class TestToolArguments:
@@ -161,6 +166,49 @@ class TestDeterministicRouting:
         for question in ("active incidents", "backlog", "water level", "overview", "what is the policy", "incident 3f2c1a50-9d2e-4c1b-8a6f-0b1c2d3e4f50"):
             name, arguments = tools.route_by_rules(question)
             tools.TOOLS[name].args.model_validate(arguments)
+
+
+class TestIndustryTools:
+    def test_core_tools_are_always_available_and_industry_tools_only_through_packs(self):
+        none = tools.available_tools(None)
+        assert none == tools.CORE_TOOLS
+        assert not none & {"water_levels", "equipment_readings", "maintenance_backlog"}
+        manufacturing = tools.available_tools({"maintenance_backlog", "equipment_readings"})
+        assert {"equipment_readings", "maintenance_backlog"} <= manufacturing and "water_levels" not in manufacturing
+
+    def test_a_pack_cannot_introduce_a_tool_by_naming_it(self):
+        assert "drop_database" not in tools.available_tools({"drop_database", "maintenance_backlog"})
+
+    def test_the_model_is_only_told_about_available_tools(self):
+        catalog = tools.catalog_for_prompt(tools.available_tools(set()))
+        assert "water_levels" not in catalog and "maintenance_backlog" not in catalog
+        assert "list_incidents" in catalog
+
+    @pytest.mark.parametrize(
+        ("question", "available", "tool"),
+        [
+            ("Which work orders are open?", {"maintenance_backlog"}, "maintenance_backlog"),
+            # Without the maintenance tool the question ends at the document search, never at another industry's data.
+            ("Which work orders are open?", set(), "search_documents"),
+            ("What is the vibration on the CNC machines?", {"equipment_readings"}, "equipment_readings"),
+            ("What is the vibration on the CNC machines?", set(), "search_documents"),
+            ("What is the current river level?", set(), "search_documents"),
+            ("What is the current river level?", {"water_levels"}, "water_levels"),
+        ],
+    )
+    def test_routing_never_selects_a_tool_the_tenant_does_not_have(self, question, available, tool):
+        allowed = tools.available_tools(available)
+        name, arguments = tools.route_by_rules(question, allowed)
+        assert name == tool and name in allowed
+        tools.TOOLS[name].args.model_validate(arguments)
+
+    def test_every_selectable_tool_has_a_renderer(self):
+        for name in tools.SELECTABLE:
+            assert name in render.RENDERERS
+
+    def test_report_sections_follow_the_available_tools(self):
+        headings = [h for _, h in render.report_headings(["kpi_summary", "list_incidents", "workflow_bottlenecks", "maintenance_backlog"])]
+        assert headings == ["1. Summary", "2. Active incidents", "3. Workflow backlog", "4. Maintenance backlog"]
 
 
 class TestChunking:

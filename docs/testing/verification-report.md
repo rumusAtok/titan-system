@@ -1,8 +1,58 @@
 # Testing and verification report
 
-Everything in this report was executed on the development workstation on 2026-11-12 and
-2026-11-13. Where something was not executed, it says so. Results describe a single-host
-laboratory with synthetic data; they are not evidence of production behaviour.
+Everything in this report was executed on the development workstation: v2 on 2026-11-12 and
+2026-11-13, v3 on 2026-11-16 and 2026-11-17. Where something was not executed, it says so.
+Results describe a single-host laboratory with synthetic data; they are not evidence of
+production behaviour.
+
+## TITAN v3 (multi-industry), 2026-11-17
+
+The v2 stack and its data were upgraded in place (migrations `0002_*`, the backfill of packs for
+existing tenants, `identity-sync.mjs`, seed), not rebuilt from empty volumes.
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Build | `npm run build` | pass |
+| Node unit tests | `npm run test:unit:docker` | 128 passed (13 files) |
+| Python unit tests | image `--target unit-test` | data-pipeline 18, analytics 8, ai-gateway 70 passed |
+| Web build (type-check, static export) | `docker compose build web` | pass |
+| Integration + security + contract | `npm run test:integration` | 243 passed, 0 failed, 0 skipped (fourth run, includes `ai-industry.test.ts`; history below) |
+| AI and analytics industry isolation | `tests/integration/ai-industry.test.ts` | 8 passed (part of the 243) |
+| Browser tests | `npm run test:e2e` | 26 passed (second run; the first run had 2 failures, both test-side: a capitalisation in an expectation and a menu read without waiting). Includes an automated WCAG 2 A/AA scan and a phone-width overflow check of 8 new pages |
+| Restore drill incl. industry configuration | `npm run dr:restore-drill` | passed: 15 databases (236 MB) backed up in 102 s, restored and verified in 85.8 s; industry configuration and a maintenance request with its work order present (report backup-restore-20261117T074538Z) |
+| Helm chart | `helm lint`, `kubeconform -strict` | 0 failures; 85 resources valid (80 in v2) |
+
+### The twelve required v3 tests
+
+| # | Requirement | Where | Result |
+| --- | --- | --- | --- |
+| 1 | Government and flood workflows keep working | Test A (16), Test B (14), all other v2 tests | pass |
+| 2 | Manufacturing pack activates and exposes its modules | `industry-packs.test.ts`, `manufacturing.test.ts` | pass |
+| 3 | Facilities pack activates without IoT | `facilities.test.ts` (asserts the tenant has no `iot` capability and the pack needs none) | pass |
+| 4 | Different tenants, different packs | `industry-packs.test.ts` › Different tenants, different packs | pass |
+| 5 | One tenant, several packs, records kept apart | `manufacturing.test.ts` › one tenant, two industries | pass |
+| 6 | Disabled modules refuse direct API calls | `industry-packs.test.ts` › A module that is not active ... (case, maintenance, device, telemetry, alert APIs; refusal audited) | pass |
+| 7 | Workflow subject extension keeps cases and incidents working | Tests A, B; `pack-isolation.test.ts` (registry protections, only registered types) | pass |
+| 8 | Manufacturing sensors create incidents and work orders | `manufacturing.test.ts` › alarm to equipment incident to maintenance request | pass |
+| 9 | Pack upgrade keeps running processes on their version | `industry-packs.test.ts` › Pack lifecycle (in-flight request finishes on 1.0.0 definition; new requests use 1.1.0) | pass |
+| 10 | RLS and authorization still effective | Test C (17), authorization (21), `pack-isolation.test.ts` (16, incl. direct database attacks as the new roles) | pass |
+| 11 | AI tools cannot reach other industries or tenants | `ai-industry.test.ts` (8) | pass |
+| 12 | Backups and recovery include industry configuration | restore drill step "Verify industry-pack configuration and industry records in the restore" | passed: 15 databases (236 MB) backed up in 102 s, restored and verified in 85.8 s; industry configuration and a maintenance request with its work order present (report backup-restore-20261117T074538Z) |
+
+### v3 run history
+
+| Run | Result | What failed and why |
+| --- | --- | --- |
+| Baseline (before any change) | 122 passed, 1 skipped | Skip: analytics trend check needs a completed 5-minute bucket |
+| 1 (v3 backend, v2 tests + facilities) | 168 of 171 | (a) API contract: OpenAPI not yet regenerated, expected. (b) AI bottleneck explanation once returned an unexpected status; passed on immediate re-run and in every later run; not reproduced. (c) Analytics: a service identity now gets 403 from the case API instead of an empty list (a deliberate, stricter behaviour from capability enforcement); test updated |
+| 2 (all v3 backend tests) | 233 of 235 | (a) API contract, as above. (b) Event contract: `pack_id` had been added as a **required** field to existing maintenance events, so older events in the stream failed validation. A real contract defect; fixed by making it optional |
+| 3 | 235 of 235 | — |
+| 4 (with `ai-industry.test.ts`) | 243 of 243, 0 skipped, 204 s | — |
+
+Tests written in this stage were reviewed before being relied on. Four assertions that could
+never fail were found and replaced: a browser test that called an API without a token and
+accepted 401; a widget test comparing with a placeholder; an AI label check that compared a
+value with itself; a dataset check that only asserted a sum was not negative.
 
 ## Environment
 
@@ -126,6 +176,12 @@ the scan. No manual assistive-technology testing was done.
 | 12 | Full-suite runs | Three test assumptions (see the run history) | Tests corrected; no assertion was removed or weakened to always pass |
 
 ## Not verified
+
+- **v3:** the failover and failback drills were not re-run with maintenance-service and the
+  v3 consumers in the stack (the restore drill was). The CI workflow, including its new steps,
+  has still never run. The v3 stack was upgraded in place, not started from empty volumes.
+- **v3:** no load test of pack activation, entitlement propagation or dashboard queries; no
+  test with more than four tenants.
 
 - Any Kubernetes deployment: Helm chart, CloudNativePG, NATS, Keycloak operator, Argo CD,
   Velero, External Secrets, OpenTofu `apply`.

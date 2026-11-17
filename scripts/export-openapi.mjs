@@ -11,7 +11,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { rawApi } from './lib/titan-client.mjs';
 
-export const API_SERVICES = ['tenant', 'case', 'workflow', 'notification', 'audit', 'asset', 'device', 'telemetry', 'alert', 'incident', 'analytics', 'pipeline', 'ai'];
+export const API_SERVICES = ['tenant', 'case', 'workflow', 'notification', 'audit', 'asset', 'device', 'telemetry', 'alert', 'incident', 'maintenance', 'analytics', 'pipeline', 'ai'];
 export const API_DIR = fileURLToPath(new URL('../docs/api', import.meta.url));
 
 /** Stable form of an OpenAPI document: sorted keys, so diffs show real changes only. */

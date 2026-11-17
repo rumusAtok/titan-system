@@ -3,6 +3,7 @@ import type { Principal } from '@titan/authentication';
 import { PLATFORM_TENANT_ID } from '@titan/contracts';
 import { Db, DomainError, Outbox } from '@titan/platform';
 import { z } from 'zod';
+import { PacksService } from './packs.service.js';
 
 export const CreateTenant = z.object({
   id: z.uuid().optional(),
@@ -30,6 +31,20 @@ export const CreateJurisdiction = z.object({
   parent_id: z.uuid().nullable().default(null),
 });
 
+export const SITE_KINDS = ['business_unit', 'plant', 'facility', 'campus', 'building', 'line', 'area', 'site'] as const;
+
+export const CreateSite = z
+  .object({
+    code: z.string().regex(/^[A-Z0-9][A-Z0-9_-]{1,31}$/),
+    name: z.string().min(2).max(200),
+    kind: z.enum(SITE_KINDS),
+    parent_id: z.uuid().nullable().default(null),
+    address: z.string().max(500).nullable().default(null),
+    latitude: z.number().min(-90).max(90).nullable().default(null),
+    longitude: z.number().min(-180).max(180).nullable().default(null),
+  })
+  .refine((s) => (s.latitude === null) === (s.longitude === null), { message: 'latitude and longitude must be given together' });
+
 export const UpsertMembership = z.object({
   username: z.string().min(1).max(255),
   department_id: z.uuid().nullable().default(null),
@@ -41,6 +56,7 @@ export class TenantService {
   constructor(
     @Inject(Db) private readonly db: Db,
     @Inject(Outbox) private readonly outbox: Outbox,
+    @Inject(PacksService) private readonly packs: PacksService,
   ) {}
 
   listTenants() {
@@ -48,7 +64,7 @@ export class TenantService {
     return this.db.tx(PLATFORM_TENANT_ID, (q) => q.query('SELECT id, slug, name, status, created_at FROM tenants ORDER BY name'));
   }
 
-  createTenant(input: z.infer<typeof CreateTenant>) {
+  createTenant(input: z.infer<typeof CreateTenant>, actor: string) {
     return this.db.tx(PLATFORM_TENANT_ID, async (q) => {
       const tenant = await q.one<{ id: string; slug: string; name: string }>(
         `INSERT INTO tenants (id, slug, name) VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3)
@@ -63,6 +79,8 @@ export class TenantService {
         tenantId: tenant.id,
         payload: { tenant_id: tenant.id, name: tenant.name, slug: tenant.slug },
       });
+      // Every tenant starts with the universal platform core; industry packs are activated by its administrator.
+      await this.packs.activateCore(q, tenant.id, actor);
       return tenant;
     });
   }
@@ -139,6 +157,32 @@ export class TenantService {
         [user.tenantId, input.code, input.name, input.level, input.parent_id],
       ),
     );
+  }
+
+  listSites(user: Principal) {
+    return this.db.tx(user.tenantId, (q) =>
+      q.query('SELECT id, code, name, kind, parent_id, address, latitude, longitude, created_by, created_at FROM sites ORDER BY code'),
+    );
+  }
+
+  createSite(user: Principal, input: z.infer<typeof CreateSite>) {
+    return this.db.tx(user.tenantId, async (q) => {
+      if (input.parent_id && !(await q.maybeOne('SELECT 1 FROM sites WHERE id = $1', [input.parent_id]))) throw DomainError.invalid('parent site not found');
+      const site = await q.one<{ id: string; code: string; name: string; kind: string; parent_id: string | null }>(
+        `INSERT INTO sites (tenant_id, code, name, kind, parent_id, address, latitude, longitude, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         RETURNING id, code, name, kind, parent_id, address, latitude, longitude, created_by, created_at`,
+        [user.tenantId, input.code, input.name, input.kind, input.parent_id, input.address, input.latitude, input.longitude, user.username],
+      );
+      await this.outbox.emit(q, {
+        type: 'tenant.site.created.v1',
+        aggregateType: 'site',
+        aggregateId: site.id,
+        tenantId: user.tenantId,
+        payload: { site_id: site.id, code: site.code, name: site.name, kind: site.kind, parent_id: site.parent_id },
+      });
+      return site;
+    });
   }
 
   listMemberships(user: Principal) {

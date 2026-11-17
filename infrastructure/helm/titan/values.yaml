@@ -16,6 +16,9 @@ global:
   publicUrl: https://titan.example.gov
   apiUrl: https://api.titan.example.gov
   identityUrl: https://id.titan.example.gov
+  # Raster tiles of the map page. Empty: no base map, no request leaves the platform.
+  # The public OpenStreetMap server is not suitable for operational use (see the risk register).
+  mapTileUrl: ""
 
   oidc:
     # Token issuer as seen by browsers, and the in-cluster key endpoint.
@@ -164,6 +167,8 @@ services:
   tenant-service:
     runtime: node
     image: tenant-service
+    # Asked for entitlements (with the caller's token) by the Python services.
+    callers: [analytics-service, ai-gateway-service]
     critical: true
     database: titan_tenant
 
@@ -203,6 +208,13 @@ services:
     database: titan_incident
     callers: [ai-gateway-service]
 
+  # Reusable business capability (TITAN v3).
+  maintenance-service:
+    runtime: node
+    image: maintenance-service
+    database: titan_maintenance
+    callers: [ai-gateway-service]
+
   device-service:
     runtime: node
     image: device-service
@@ -234,6 +246,8 @@ services:
     database: titan_analytics
     lake: readOnly
     callers: [data-pipeline-service, ai-gateway-service]
+    env:
+      TENANT_URL: http://tenant-service:3000
 
   data-pipeline-service:
     runtime: python
@@ -267,6 +281,8 @@ services:
       INCIDENT_URL: http://incident-service:3000
       TELEMETRY_URL: http://telemetry-service:3000
       WORKFLOW_URL: http://workflow-service:3000
+      MAINTENANCE_URL: http://maintenance-service:3000
+      TENANT_URL: http://tenant-service:3000
 
 # Analytical lake (bronze/silver/gold Parquet). ReadWriteMany storage, or
 # replace with object storage (see docs/architecture/data-engineering.md).

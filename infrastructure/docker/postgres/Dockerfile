@@ -9,7 +9,8 @@ RUN mkdir -p /wal-archive /backups \
 
 COPY archive-wal.sh /usr/local/bin/archive-wal.sh
 COPY titan-entrypoint.sh /usr/local/bin/titan-entrypoint.sh
-RUN chmod 755 /usr/local/bin/archive-wal.sh /usr/local/bin/titan-entrypoint.sh
+COPY ensure-databases.sh /usr/local/bin/titan-ensure-databases.sh
+RUN chmod 755 /usr/local/bin/archive-wal.sh /usr/local/bin/titan-entrypoint.sh /usr/local/bin/titan-ensure-databases.sh
 
 COPY init/ /docker-entrypoint-initdb.d/
 RUN chmod 755 /docker-entrypoint-initdb.d/*.sh

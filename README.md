@@ -1,8 +1,12 @@
 # TITAN — Total Intelligence, Technology, Automation & Network Platform
 
-A multi-tenant operations platform for government and enterprise work, built as independently
-deployable microservices: applications and approvals, infrastructure assets, IoT flood
-monitoring, incident response, analytics, an optional AI assistant, and a disaster-recovery lab.
+A multi-tenant, multi-industry operations platform built as independently deployable
+microservices. A universal core (identity, tenancy, workflow, incidents, assets, notifications,
+audit, analytics, optional AI, recovery) is extended per organisation by **industry packs**:
+declarative, versioned configuration that switches on business capabilities (case management,
+device telemetry, maintenance) and installs workflows, forms, asset categories, sensor profiles,
+alarm rules and dashboards. Packs shipped: public services, disaster and infrastructure
+management (flood monitoring), manufacturing, facilities management.
 
 > **Status: development release, verified on one workstation with synthetic data.**
 > It is not production-ready, not certified, not highly available and has never been deployed
@@ -15,16 +19,20 @@ monitoring, incident response, analytics, an optional AI assistant, and a disast
 | --- | --- |
 | Government services | Submit an application, route it through a four-stage approval (validation, technical review, department head, final approval) with return, reject, delegation, SLA escalation, notifications and a full audit trail |
 | IoT operations | Synthetic river-level, rainfall and pump sensors publish over MQTT; readings are validated and stored; a threshold breach raises an alarm, opens an incident and starts an incident-response process |
-| Command center | Web application with executive dashboard, applications, review inbox, IoT operations, map, AI workspace, administration and recovery status |
+| Industry packs (v3) | Activate, configure, upgrade (1.0 → 1.1 with a process in flight) and deactivate packs per tenant; one tenant can run several; modules a tenant has not activated are refused by the API, not only hidden; configuration can be exported and restored |
+| Manufacturing (v3) | Machine vibration and bearing-temperature telemetry → alarm → equipment incident → automatic repair request → approval → work order → completion → machine condition, incident timeline and KPIs |
+| Facilities (v3) | Building service requests and inspection findings → configurable approval (budget stage from 5000) → assigned work → completion; no device needed |
+| Command center | Web application whose menu and dashboards come from the tenant's packs: enterprise workspace with industry selector, shared work inbox, assets, incidents, maintenance, production equipment, facilities, and the v2 government, IoT, map, AI, administration and recovery screens |
 | Analytics | Event stream → bronze/silver/gold lake → KPIs and trends computed from stored data |
 | AI assistant (optional) | Answers questions from platform data using read-only tools with the user's own permissions; works without a model (answers are then labelled as deterministic); writes only as proposals a person approves |
 | Multi-tenancy | Tenant from the verified token plus PostgreSQL row-level security; two demo tenants that cannot see each other |
 | Resilience | Transactional outbox, idempotent consumers, retries, dead-letter queue, circuit breakers, bulkheads, rate limiting |
 | Recovery lab | Scripted backup, restore drill, failover drill with operator confirmation, and failback, each producing a report with measured times |
 
-13 services are implemented (10 Node.js, 3 Python) plus the gateway and web application.
-7 further services of the target catalog are designed but have no code:
-document, maintenance, procurement, geospatial, video, integration, report.
+14 services are implemented (11 Node.js, 3 Python) plus the gateway and web application.
+maintenance-service is a minimum slice (requests, approval outcome, work orders).
+6 further services of the target catalog are designed but have no code:
+document, procurement, geospatial, video, integration, report.
 
 ## Quick start
 
@@ -38,8 +46,11 @@ PowerShell shown; the plain `docker compose` equivalents are in the
 ```
 
 Open http://localhost:3000 and sign in, for example as `alice.applicant`, `victor.validator`,
-`derek.duty` or `adam.admin`. All demo users share the password in `.env`
-(`DEMO_USER_PASSWORD`); they are synthetic, test-only identities.
+`derek.duty` or `adam.admin` (government and flood monitoring), `maya.admin`, `sam.supervisor`
+or `tim.technician` (manufacturing and facilities in one tenant), `rita.requester` (an occupant
+raising facility requests). All demo users share the password in `.env`
+(`DEMO_USER_PASSWORD`); they are synthetic, test-only identities. Upgrading a v2 installation:
+also run `node scripts/identity-sync.mjs` once.
 
 ```powershell
 ./scripts/titan.ps1 up -Profiles core,iot,analytics,ai,observability   # everything

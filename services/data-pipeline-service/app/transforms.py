@@ -32,13 +32,26 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "stage_key": pl.String, "role": pl.String, "assigned_at": TS, "due_at": TS, "closed_at": TS, "status": pl.String,
         "decision": pl.String, "_seq": pl.Int64,
     },
+    # `category` and `asset_id` were added in TITAN v3; rows written before that have them null.
     "incidents": {
         "incident_id": pl.String, "tenant_id": pl.String, "reference_no": pl.String, "title": pl.String, "severity": pl.String,
         "source_type": pl.String, "device_id": pl.String, "created_at": TS, "acknowledged_at": TS, "resolved_at": TS, "_seq": pl.Int64,
+        "category": pl.String, "asset_id": pl.String,
     },
     "devices": {
         "device_id": pl.String, "tenant_id": pl.String, "serial_no": pl.String, "name": pl.String,
         "expected_interval_seconds": pl.Int64, "status": pl.String, "status_changed_at": TS, "_seq": pl.Int64,
+        "device_type": pl.String,
+    },
+    "maintenance_requests": {
+        "request_id": pl.String, "tenant_id": pl.String, "reference_no": pl.String, "request_type": pl.String, "pack_id": pl.String,
+        "priority": pl.String, "origin_type": pl.String, "asset_id": pl.String, "status": pl.String, "submitted_at": TS, "decided_at": TS,
+        "_seq": pl.Int64,
+    },
+    "work_orders": {
+        "work_order_id": pl.String, "tenant_id": pl.String, "reference_no": pl.String, "request_id": pl.String, "request_type": pl.String,
+        "pack_id": pl.String, "priority": pl.String, "asset_id": pl.String, "origin_type": pl.String, "status": pl.String,
+        "created_at": TS, "started_at": TS, "completed_at": TS, "labor_hours": pl.Float64, "condition_after": pl.String, "_seq": pl.Int64,
     },
     "assets": {
         "asset_id": pl.String, "tenant_id": pl.String, "code": pl.String, "name": pl.String, "category": pl.String, "status": pl.String,
@@ -56,8 +69,13 @@ KEYS = {
     "incidents": ["incident_id"],
     "devices": ["device_id"],
     "assets": ["asset_id"],
+    "maintenance_requests": ["request_id"],
+    "work_orders": ["work_order_id"],
     "measurements": ["device_id", "sensor_kind", "observed_at", "message_id"],
 }
+
+# Entity datasets (one row per key, merged with "latest non-null value"). `measurements` is the only fact dataset.
+ENTITIES = ["cases", "workflow_tasks", "incidents", "devices", "assets", "maintenance_requests", "work_orders"]
 
 # Which bronze event types feed which silver dataset (also recorded as lineage).
 SOURCES = {
@@ -66,6 +84,11 @@ SOURCES = {
     "incidents": ["incident.created.v1", "incident.acknowledged.v1", "incident.resolved.v1"],
     "devices": ["device.registered.v1", "device.status_changed.v1"],
     "assets": ["asset.created.v1", "asset.status_changed.v1", "asset.maintenance.updated.v1"],
+    "maintenance_requests": ["maintenance.request.submitted.v1", "maintenance.request.decided.v1"],
+    "work_orders": [
+        "maintenance.work_order.created.v1", "maintenance.work_order.assigned.v1", "maintenance.work_order.started.v1",
+        "maintenance.work_order.completed.v1", "maintenance.work_order.cancelled.v1",
+    ],
     "measurements": ["telemetry.measurement.accepted.v1"],
 }
 
@@ -107,7 +130,8 @@ def _changes(event: dict[str, Any], seq: int) -> list[tuple[str, dict[str, Any]]
         case "incident.created.v1":
             return [("incidents", {**base, "incident_id": p["incident_id"], "reference_no": p.get("reference_no"), "title": p.get("title"),
                                    "severity": p.get("severity"), "source_type": p.get("source_type"), "device_id": p.get("device_id"),
-                                   "created_at": ts(p.get("created_at"))})]
+                                   "created_at": ts(p.get("created_at")), "category": p.get("category") or "general",
+                                   "asset_id": p.get("asset_id")})]
         case "incident.acknowledged.v1":
             return [("incidents", {**base, "incident_id": p["incident_id"], "acknowledged_at": ts(p.get("acknowledged_at"))})]
         case "incident.resolved.v1":
@@ -115,7 +139,7 @@ def _changes(event: dict[str, Any], seq: int) -> list[tuple[str, dict[str, Any]]
         case "device.registered.v1":
             return [("devices", {**base, "device_id": p["device_id"], "serial_no": p.get("serial_no"), "name": p.get("name"),
                                  "expected_interval_seconds": p.get("expected_interval_seconds"), "status": "registered",
-                                 "status_changed_at": ts(event.get("occurred_at"))})]
+                                 "status_changed_at": ts(event.get("occurred_at")), "device_type": p.get("device_type")})]
         case "device.status_changed.v1":
             return [("devices", {**base, "device_id": p["device_id"], "status": p.get("to"), "status_changed_at": ts(event.get("occurred_at"))})]
         case "asset.created.v1":
@@ -126,6 +150,28 @@ def _changes(event: dict[str, Any], seq: int) -> list[tuple[str, dict[str, Any]]
         case "asset.maintenance.updated.v1":
             return [("assets", {**base, "asset_id": p["asset_id"], "condition": p.get("condition"),
                                 "last_maintained_at": ts(p.get("last_maintained_at")), "next_maintenance_due": ts(p.get("next_maintenance_due"))})]
+        case "maintenance.request.submitted.v1":
+            return [("maintenance_requests", {**base, "request_id": p["request_id"], "reference_no": p.get("reference_no"),
+                                              "request_type": p.get("request_type"), "pack_id": p.get("pack_id"), "priority": p.get("priority"),
+                                              "origin_type": p.get("origin_type"), "asset_id": p.get("asset_id"), "status": "submitted",
+                                              "submitted_at": ts(p.get("submitted_at"))})]
+        case "maintenance.request.decided.v1":
+            return [("maintenance_requests", {**base, "request_id": p["request_id"], "status": p.get("outcome"), "decided_at": ts(p.get("decided_at"))})]
+        case "maintenance.work_order.created.v1":
+            return [("work_orders", {**base, "work_order_id": p["work_order_id"], "reference_no": p.get("reference_no"), "request_id": p.get("request_id"),
+                                     "request_type": p.get("request_type"), "pack_id": p.get("pack_id"), "priority": p.get("priority"),
+                                     "asset_id": p.get("asset_id"), "origin_type": p.get("origin_type"), "status": "open",
+                                     "created_at": ts(p.get("created_at"))})]
+        case "maintenance.work_order.assigned.v1":
+            return [("work_orders", {**base, "work_order_id": p["work_order_id"], "status": "assigned"})]
+        case "maintenance.work_order.started.v1":
+            return [("work_orders", {**base, "work_order_id": p["work_order_id"], "status": "in_progress", "started_at": ts(p.get("started_at"))})]
+        case "maintenance.work_order.completed.v1":
+            return [("work_orders", {**base, "work_order_id": p["work_order_id"], "status": "completed", "started_at": ts(p.get("started_at")),
+                                     "completed_at": ts(p.get("completed_at")), "labor_hours": safe_float(p.get("labor_hours")),
+                                     "condition_after": p.get("condition_after")})]
+        case "maintenance.work_order.cancelled.v1":
+            return [("work_orders", {**base, "work_order_id": p["work_order_id"], "status": "cancelled"})]
         case "telemetry.measurement.accepted.v1":
             return [("measurements", {**base, "device_id": p["device_id"], "sensor_kind": p.get("sensor_kind"), "value": p.get("value"),
                                       "unit": p.get("unit"), "quality": p.get("quality"), "message_id": p.get("message_id"),
@@ -158,11 +204,25 @@ def extract_changes(events: list[tuple[int, dict[str, Any]]]) -> tuple[dict[str,
     return {name: frame(name, data) for name, data in rows.items()}, malformed
 
 
+def conform(dataset: str, df: pl.DataFrame) -> pl.DataFrame:
+    """Brings a stored frame to the dataset's current schema.
+
+    A silver file written by an earlier version may lack columns added since
+    (schema evolution is additive only): they are filled with nulls, so old
+    rows stay valid and a later event can still supply the value.
+    """
+    schema = SCHEMAS[dataset]
+    missing = [pl.lit(None).cast(dtype).alias(name) for name, dtype in schema.items() if name not in df.columns]
+    if missing:
+        df = df.with_columns(missing)
+    return df.select(list(schema)).cast(schema)
+
+
 def merge_latest(dataset: str, existing: pl.DataFrame | None, changes: pl.DataFrame) -> pl.DataFrame:
     """Entity merge: per key, the latest non-null value of every column in bronze order."""
     schema = SCHEMAS[dataset]
     key = KEYS[dataset]
-    parts = [f.select(list(schema)).cast(schema) for f in (existing, changes) if f is not None and f.height > 0]
+    parts = [conform(dataset, f) for f in (existing, changes) if f is not None and f.height > 0]
     if not parts:
         return pl.DataFrame(schema=schema)
     combined = pl.concat(parts, how="vertical").sort("_seq")
@@ -173,7 +233,7 @@ def merge_latest(dataset: str, existing: pl.DataFrame | None, changes: pl.DataFr
 def merge_append(dataset: str, existing: pl.DataFrame | None, changes: pl.DataFrame) -> pl.DataFrame:
     """Fact merge: append, then keep one row per natural key (drops redelivered duplicates)."""
     schema = SCHEMAS[dataset]
-    parts = [f.select(list(schema)).cast(schema) for f in (existing, changes) if f is not None and f.height > 0]
+    parts = [conform(dataset, f) for f in (existing, changes) if f is not None and f.height > 0]
     if not parts:
         return pl.DataFrame(schema=schema)
     return pl.concat(parts, how="vertical").sort("_seq").unique(subset=KEYS[dataset], keep="first", maintain_order=True)
@@ -213,6 +273,16 @@ def _rules(dataset: str, now: datetime) -> list[Rule]:
         ],
         "devices": [("expected_interval_positive", lambda: pl.col("expected_interval_seconds").is_null() | (pl.col("expected_interval_seconds") > 0))],
         "assets": [("status_in_domain", lambda: pl.col("status").is_null() | pl.col("status").is_in(["planned", "active", "under_maintenance", "retired"]))],
+        "maintenance_requests": [
+            ("status_in_domain", lambda: pl.col("status").is_null() | pl.col("status").is_in(["submitted", "approved", "rejected", "cancelled"])),
+            ("priority_in_domain", lambda: pl.col("priority").is_null() | pl.col("priority").is_in(["low", "normal", "high", "urgent"])),
+            ("decided_not_before_submitted", lambda: pl.col("decided_at").is_null() | pl.col("submitted_at").is_null() | (pl.col("decided_at") >= pl.col("submitted_at"))),
+        ],
+        "work_orders": [
+            ("status_in_domain", lambda: pl.col("status").is_null() | pl.col("status").is_in(["open", "assigned", "in_progress", "completed", "cancelled"])),
+            ("completed_not_before_started", lambda: pl.col("completed_at").is_null() | pl.col("started_at").is_null() | (pl.col("completed_at") >= pl.col("started_at"))),
+            ("labor_hours_not_negative", lambda: pl.col("labor_hours").is_null() | (pl.col("labor_hours") >= 0)),
+        ],
         "measurements": [
             ("value_is_finite", lambda: pl.col("value").is_not_null() & pl.col("value").is_finite()),
             ("quality_in_domain", lambda: pl.col("quality").is_in(["ok", "out_of_range", "late", "future_timestamp"])),

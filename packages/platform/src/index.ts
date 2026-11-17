@@ -6,6 +6,7 @@ export * from './validation.js';
 export * from './nats.js';
 export * from './outbox.js';
 export * from './consumer.js';
+export * from './entitlements.js';
 export * from './resilience.js';
 export * from './health.controller.js';
 export * from './platform.module.js';

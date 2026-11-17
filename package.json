@@ -22,6 +22,7 @@
     "services/telemetry-service",
     "services/alert-service",
     "services/incident-service",
+    "services/maintenance-service",
     "apps/gateway"
   ],
   "scripts": {

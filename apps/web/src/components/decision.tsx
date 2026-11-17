@@ -10,7 +10,8 @@ export interface WorkflowTask {
   stage_key: string;
   stage_name: string;
   role: string;
-  subject_type: 'case' | 'incident';
+  /** Any registered business subject: case, incident, maintenance_request, service_request, ... */
+  subject_type: string;
   subject_id: string;
   reference: string;
   title: string;
@@ -35,7 +36,7 @@ export function DecisionDialog({ task, onClose }: { task: WorkflowTask | null; o
       }),
     onSuccess: async () => {
       setComment('');
-      await Promise.all(['workflow', 'cases', 'case', 'incident', 'incidents', 'notifications'].map((k) => client.invalidateQueries({ queryKey: [k] })));
+      await Promise.all(['workflow', 'cases', 'case', 'incident', 'incidents', 'notifications', 'maintenance'].map((k) => client.invalidateQueries({ queryKey: [k] })));
       onClose();
     },
   });
@@ -59,9 +60,12 @@ export function DecisionDialog({ task, onClose }: { task: WorkflowTask | null; o
           </Button>
           {!isIncident && (
             <>
-              <Button onClick={() => decide.mutate('return')} disabled={decide.isPending || needsComment} title={needsComment ? 'A comment is required to return an application' : undefined}>
-                Return for changes
-              </Button>
+              {/* Only applications can be sent back to their applicant; other requests are approved or rejected. */}
+              {task?.subject_type === 'case' && (
+                <Button onClick={() => decide.mutate('return')} disabled={decide.isPending || needsComment} title={needsComment ? 'A comment is required to return an application' : undefined}>
+                  Return for changes
+                </Button>
+              )}
               <Button variant="danger" onClick={() => decide.mutate('reject')} disabled={decide.isPending || needsComment} title={needsComment ? 'A comment is required to reject' : undefined}>
                 Reject
               </Button>

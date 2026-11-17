@@ -160,8 +160,11 @@ describe('analytics: tenant isolation and access control', () => {
     assert.equal(refresh.status, 200);
     assert.equal((await refresh.json()).missing.length, 0);
     assert.equal((await call('GET', '/api/analytics/kpis/summary')).status, 403);
-    assert.equal((await call('GET', '/api/case/cases')).status, 200, 'a service identity belongs to no tenant...');
-    assert.deepEqual(await (await call('GET', '/api/case/cases')).json(), [], '...and therefore sees no tenant records');
+    // A service identity belongs to no tenant. Since TITAN v3 that also means it holds no capability:
+    // the case API refuses it outright (before v3 it answered 200 with an empty list).
+    const cases = await call('GET', '/api/case/cases');
+    assert.equal(cases.status, 403, 'a service identity belongs to no tenant and therefore reads no tenant records');
+    assert.equal((await cases.json()).error.code, 'capability_disabled');
   });
 });
 
