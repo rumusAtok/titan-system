@@ -49,6 +49,19 @@ What it does, without touching the primary:
 6. Restores every database with `pg_restore --exit-on-error`.
 7. Checks row counts fall within the bounds recorded at backup time.
 8. Checks the recorded transactions, the identity store and that row-level security is enabled.
+   Since v3 it also records the industry-pack configuration of the tenant Meridian (packs,
+   versions, settings) and a facility request taken through approval to a work order, and checks
+   that all of it, the pack catalogue and history, the workflow definitions packs installed and
+   maintenance-service's entitlement projection come back unchanged. (Needs the v3 seed.)
+
+The size of a backup grows with telemetry and the pipeline's bronze table: on 2026-11-17, after
+four days of continuous simulators, 15 databases (about 3.5 GB on disk) produced a 236 MB backup
+in 102 s and restored in 73 s.
+
+Per-tenant pack configuration can also be exported and restored on its own, without a database
+restore: Administration › Industry packs, or `GET /api/tenant/packs/export` and
+`POST /api/tenant/packs/import` (`dry_run: true` to preview). An import always applies to the
+caller's own tenant.
 9. Starts a real case-service against the restored database (with an unreachable broker so it
    cannot touch live events) and reads, writes and checks tenant isolation through its API.
 10. Writes a report to `infrastructure/disaster-recovery/reports/` and marks the backup verified.

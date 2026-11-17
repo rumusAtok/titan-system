@@ -11,7 +11,7 @@
   },
   "info": {
     "contact": {},
-    "description": "Organisations, departments, jurisdictions, tenant configuration and organisational memberships.",
+    "description": "Organisations, sites, departments, memberships, and the industry-pack registry: catalogue, tenant activation, entitlements, workspace navigation and dashboards.",
     "title": "TITAN tenant-service",
     "version": "0.1.0"
   },
@@ -82,6 +82,26 @@
         ],
         "tags": [
           "tenants"
+        ]
+      }
+    },
+    "/entitlements": {
+      "get": {
+        "operationId": "PacksController_entitlements",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's tenant: active capabilities, packs, approved query templates and AI tools",
+        "tags": [
+          "industry packs"
         ]
       }
     },
@@ -250,6 +270,385 @@
         ]
       }
     },
+    "/packs": {
+      "get": {
+        "operationId": "PacksController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's tenant: packs, versions, status and configuration",
+        "tags": [
+          "industry packs"
+        ]
+      }
+    },
+    "/packs/catalog": {
+      "get": {
+        "operationId": "PacksController_catalog",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Industry packs shipped with the platform, with their versions and contents",
+        "tags": [
+          "industry packs"
+        ]
+      }
+    },
+    "/packs/catalog/{id}/{version}": {
+      "get": {
+        "operationId": "PacksController_manifest",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Complete manifest of one pack version",
+        "tags": [
+          "industry packs"
+        ]
+      }
+    },
+    "/packs/export": {
+      "get": {
+        "operationId": "PacksController_export",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Export the tenant's pack activation, versions, configuration and dashboard layouts",
+        "tags": [
+          "industry packs"
+        ]
+      }
+    },
+    "/packs/history": {
+      "get": {
+        "operationId": "PacksController_history",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Every activation, upgrade, reconfiguration and deactivation of the tenant",
+        "tags": [
+          "industry packs"
+        ]
+      }
+    },
+    "/packs/import": {
+      "post": {
+        "operationId": "PacksController_import",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "document": {
+                    "properties": {
+                      "dashboard_layouts": {
+                        "default": [],
+                        "items": {
+                          "properties": {
+                            "dashboard_key": {
+                              "type": "string"
+                            },
+                            "widgets": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "required": [
+                            "dashboard_key",
+                            "widgets"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "format": {
+                        "enum": [
+                          "titan-pack-configuration/1"
+                        ],
+                        "type": "string"
+                      },
+                      "packs": {
+                        "items": {
+                          "properties": {
+                            "config": {
+                              "additionalProperties": {},
+                              "default": {},
+                              "type": "object"
+                            },
+                            "pack_id": {
+                              "type": "string"
+                            },
+                            "status": {
+                              "enum": [
+                                "active",
+                                "disabled"
+                              ],
+                              "type": "string"
+                            },
+                            "version": {
+                              "pattern": "^\\d+\\.\\d+\\.\\d+$",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "pack_id",
+                            "version",
+                            "status"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "format",
+                      "packs"
+                    ],
+                    "type": "object"
+                  },
+                  "dry_run": {
+                    "default": false,
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "document"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Restore pack configuration from an export (always into the caller's own tenant); supports dry_run",
+        "tags": [
+          "industry packs"
+        ]
+      }
+    },
+    "/packs/{id}/activate": {
+      "post": {
+        "description": "Checks pack dependencies and the upgrade path, validates configuration, records the change and announces the templates to install and the new entitlements. Running business processes continue on the definition version they started with.",
+        "operationId": "PacksController_activate",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "allow_downgrade": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "config": {
+                    "additionalProperties": {},
+                    "type": "object"
+                  },
+                  "version": {
+                    "pattern": "^\\d+\\.\\d+\\.\\d+$",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Activate, re-activate or upgrade a pack for the tenant",
+        "tags": [
+          "industry packs"
+        ]
+      }
+    },
+    "/packs/{id}/config": {
+      "put": {
+        "operationId": "PacksController_updateConfig",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "config": {
+                    "additionalProperties": {},
+                    "type": "object"
+                  },
+                  "expected_version": {
+                    "exclusiveMinimum": true,
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "config",
+                  "expected_version"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Change the tenant's configuration of a pack (optimistic concurrency via expected_version)",
+        "tags": [
+          "industry packs"
+        ]
+      }
+    },
+    "/packs/{id}/deactivate": {
+      "post": {
+        "operationId": "PacksController_deactivate",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Deactivate a pack: its capabilities are withdrawn, no business data is deleted",
+        "tags": [
+          "industry packs"
+        ]
+      }
+    },
+    "/packs/{id}/resync": {
+      "post": {
+        "operationId": "PacksController_resync",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Re-announce the templates of an active pack and the tenant entitlements to all services",
+        "tags": [
+          "industry packs"
+        ]
+      }
+    },
+    "/platform/capabilities": {
+      "get": {
+        "operationId": "PacksController_capabilities",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Platform layers: core capabilities, switchable business capabilities, registered workflow subject types",
+        "tags": [
+          "industry packs"
+        ]
+      }
+    },
+    "/platform/entitlements/republish": {
+      "post": {
+        "operationId": "PacksController_republish",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Re-announce the entitlements of every tenant (platform administrators only)",
+        "tags": [
+          "industry packs"
+        ]
+      }
+    },
     "/roles": {
       "get": {
         "operationId": "TenantController_roles",
@@ -265,6 +664,109 @@
           }
         ],
         "summary": "Catalogue of platform roles",
+        "tags": [
+          "tenants"
+        ]
+      }
+    },
+    "/sites": {
+      "get": {
+        "operationId": "TenantController_listSites",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Organisation structure below the tenant: business units, plants, facilities, buildings, lines",
+        "tags": [
+          "tenants"
+        ]
+      },
+      "post": {
+        "operationId": "TenantController_createSite",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "address": {
+                    "default": null,
+                    "maxLength": 500,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "code": {
+                    "pattern": "^[A-Z0-9][A-Z0-9_-]{1,31}$",
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "business_unit",
+                      "plant",
+                      "facility",
+                      "campus",
+                      "building",
+                      "line",
+                      "area",
+                      "site"
+                    ],
+                    "type": "string"
+                  },
+                  "latitude": {
+                    "default": null,
+                    "maximum": 90,
+                    "minimum": -90,
+                    "nullable": true,
+                    "type": "number"
+                  },
+                  "longitude": {
+                    "default": null,
+                    "maximum": 180,
+                    "minimum": -180,
+                    "nullable": true,
+                    "type": "number"
+                  },
+                  "name": {
+                    "maxLength": 200,
+                    "minLength": 2,
+                    "type": "string"
+                  },
+                  "parent_id": {
+                    "default": null,
+                    "format": "uuid",
+                    "nullable": true,
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "code",
+                  "name",
+                  "kind"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "tenants"
         ]
@@ -406,6 +908,94 @@
         "summary": "Replace tenant configuration (optimistic concurrency via expected_version)",
         "tags": [
           "tenants"
+        ]
+      }
+    },
+    "/workspace": {
+      "get": {
+        "description": "Derived from the active packs and filtered by the caller's roles. This shapes the user interface only; every service enforces access itself.",
+        "operationId": "PacksController_workspace",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Navigation, industry workspaces, dashboards and role templates for the caller",
+        "tags": [
+          "industry packs"
+        ]
+      }
+    },
+    "/workspace/dashboards/{key}": {
+      "delete": {
+        "operationId": "PacksController_resetLayout",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Return a dashboard to the layout defined by its pack",
+        "tags": [
+          "industry packs"
+        ]
+      },
+      "put": {
+        "operationId": "PacksController_saveLayout",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "expected_version": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "widgets": {
+                    "items": {
+                      "pattern": "^[a-z][a-z0-9-]{1,62}$",
+                      "type": "string"
+                    },
+                    "maxItems": 24,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "widgets",
+                  "expected_version"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Save the tenant's layout of a dashboard: which widgets, in which order",
+        "tags": [
+          "industry packs"
         ]
       }
     }

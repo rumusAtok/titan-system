@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "id": "public-services",
+  "version": "1.0.0",
+  "name": "Public services",
+  "industry": "Government",
+  "description": "Applications and permits submitted by the public or by staff and routed through multi-stage approval, with return, rejection, delegation and deadline tracking.",
+  "requires": { "capabilities": ["case_management"], "packs": [{ "id": "platform-core" }] },
+  "roles": [
+    { "role": "applicant", "name": "Applicant", "description": "Submits and tracks applications", "permissions": ["cases.submit", "cases.track_own"] },
+    { "role": "validation_officer", "name": "Validation officer", "description": "Checks applications for completeness", "permissions": ["cases.read", "workflow.decide"] },
+    { "role": "technical_officer", "name": "Technical officer", "description": "Performs technical assessment", "permissions": ["cases.read", "workflow.decide"] },
+    { "role": "department_head", "name": "Department head", "description": "Endorses applications for the department", "permissions": ["cases.read", "workflow.decide"] },
+    { "role": "final_approver", "name": "Final approver", "description": "Issues the final decision", "permissions": ["cases.read", "workflow.decide"] }
+  ],
+  "navigation": [
+    { "key": "executive-dashboard", "label": "Executive dashboard", "href": "/", "icon": "gauge", "audience": "staff", "order": 100 },
+    { "key": "applications", "label": "Applications", "href": "/government/", "icon": "file-text", "roles": ["applicant", "validation_officer", "technical_officer", "department_head", "final_approver", "tenant_admin", "auditor"], "order": 110 },
+    { "key": "review-inbox", "label": "Review inbox", "href": "/government/inbox/", "icon": "clipboard-check", "roles": ["validation_officer", "technical_officer", "department_head", "final_approver", "duty_officer", "incident_commander", "tenant_admin"], "order": 120 }
+  ],
+  "workflows": [
+    {
+      "key": "building-permit",
+      "name": "Building permit approval",
+      "subject_type": "case",
+      "definition": {
+        "allow_return": true,
+        "applicant_notifications": ["submitted", "returned", "approved", "rejected"],
+        "stages": [
+          { "key": "validation", "name": "Validation", "type": "single", "roles": ["validation_officer"], "sla_hours": 24, "escalate_to_role": "department_head" },
+          { "key": "technical_review", "name": "Technical review", "type": "single", "roles": ["technical_officer"], "sla_hours": 72, "escalate_to_role": "department_head" },
+          { "key": "department_endorsement", "name": "Department endorsement", "type": "single", "roles": ["department_head"], "sla_hours": 48, "escalate_to_role": "final_approver" },
+          { "key": "final_approval", "name": "Final approval", "type": "single", "roles": ["final_approver"], "sla_hours": 48 }
+        ]
+      }
+    },
+    {
+      "key": "event-permit",
+      "name": "Public event permit",
+      "subject_type": "case",
+      "definition": {
+        "allow_return": true,
+        "applicant_notifications": ["returned", "approved", "rejected"],
+        "stages": [
+          { "key": "validation", "name": "Validation", "type": "single", "roles": ["validation_officer"], "sla_hours": 24 },
+          { "key": "joint_review", "name": "Joint technical and department review", "type": "parallel", "roles": ["technical_officer", "department_head"], "sla_hours": 48 },
+          { "key": "final_approval", "name": "Final approval (large events)", "type": "single", "roles": ["final_approver"], "sla_hours": 48, "condition": { "field": "expected_attendance", "op": "gte", "value": 1000 } }
+        ]
+      }
+    }
+  ],
+  "forms": [
+    {
+      "key": "building-permit",
+      "title": "Building permit application",
+      "description": "Apply for permission to construct or alter a building.",
+      "workflow_key": "building-permit",
+      "fields": [
+        { "name": "applicant_name", "label": "Applicant name", "type": "text", "required": true, "max_length": 200 },
+        { "name": "site_address", "label": "Site address", "type": "textarea", "required": true, "max_length": 1000 },
+        { "name": "project_type", "label": "Project type", "type": "select", "required": true, "options": ["residential", "commercial", "industrial"] },
+        { "name": "floor_area_m2", "label": "Floor area (m²)", "type": "number", "required": true, "min": 1, "max": 1000000 },
+        { "name": "estimated_cost", "label": "Estimated cost", "type": "number", "required": false, "min": 0 },
+        { "name": "start_date", "label": "Planned start date", "type": "date", "required": false },
+        { "name": "declaration", "label": "I declare the information given is correct", "type": "boolean", "required": true }
+      ]
+    },
+    {
+      "key": "event-permit",
+      "title": "Public event permit application",
+      "description": "Apply to hold an event in a public space.",
+      "workflow_key": "event-permit",
+      "fields": [
+        { "name": "event_name", "label": "Event name", "type": "text", "required": true, "max_length": 200 },
+        { "name": "venue", "label": "Venue", "type": "text", "required": true, "max_length": 300 },
+        { "name": "event_date", "label": "Event date", "type": "date", "required": true },
+        { "name": "expected_attendance", "label": "Expected attendance", "type": "number", "required": true, "min": 1, "max": 1000000 },
+        { "name": "contact_email", "label": "Contact e-mail", "type": "email", "required": false }
+      ]
+    }
+  ],
+  "dashboards": [
+    {
+      "key": "public-services",
+      "title": "Applications and approvals",
+      "description": "Turnaround of completed applications and the review work that is waiting.",
+      "widgets": [
+        { "id": "approvals-completed", "title": "Applications decided", "type": "stat", "dataset": "approval_turnaround", "value": { "column": "cases", "agg": "sum" } },
+        { "id": "approval-hours", "title": "Average turnaround", "type": "stat", "dataset": "approval_turnaround", "value": { "column": "avg_hours", "agg": "avg" }, "unit": "h" },
+        { "id": "case-tasks-pending", "title": "Review tasks waiting", "type": "stat", "dataset": "pending_tasks", "filters": { "subject_type": "case" }, "value": { "column": "pending", "agg": "sum" } },
+        {
+          "id": "turnaround-by-form",
+          "title": "Turnaround by form and outcome",
+          "type": "table",
+          "dataset": "approval_turnaround",
+          "span": 2,
+          "columns": [
+            { "column": "form_key", "label": "Form" },
+            { "column": "outcome", "label": "Outcome" },
+            { "column": "cases", "label": "Cases" },
+            { "column": "avg_hours", "label": "Average (h)" },
+            { "column": "p90_hours", "label": "90th pct (h)" }
+          ]
+        }
+      ]
+    }
+  ],
+  "query_templates": ["approval_turnaround_by_form"],
+  "ai_tools": [],
+  "lifecycle": { "upgrades_from": [], "changes": ["Initial version: the government approval functionality of TITAN v2 as a pack"] }
+}

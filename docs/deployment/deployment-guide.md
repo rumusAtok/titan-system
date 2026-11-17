@@ -12,8 +12,8 @@ Prerequisites and first-time setup are in the [developer setup guide](developer-
 | Profile | Starts | Approx. memory |
 | --- | --- | --- |
 | *(always)* | PostgreSQL, NATS, Keycloak | 1.2 GB |
-| `core` | web, gateway, tenant, case, workflow, notification, audit, asset, incident | + 0.9 GB |
-| `iot` | Mosquitto, device, telemetry, alert, sensor simulator | + 0.4 GB |
+| `core` | web, gateway, tenant, case, workflow, notification, audit, asset, incident, maintenance; the one-shot `postgres-ensure` | + 1.0 GB |
+| `iot` | Mosquitto, device, telemetry, alert, two sensor simulators (flood stations; machine condition monitors) | + 0.5 GB |
 | `analytics` | data-pipeline, analytics | + 0.4 GB |
 | `ai` | ai-gateway (works without a model) | + 0.1 GB |
 | `ai-model` | Ollama (optional local model, CPU) | + 2 GB while a model is loaded |
@@ -70,9 +70,21 @@ DATABASE_OWNER_URL=postgres://case_owner:<password>@localhost:5432/titan_case DB
   node packages/platform/dist/migrate-cli.js services/case-service/migrations
 ```
 
-Databases and roles are created once, when the PostgreSQL volume is first initialised
-(`infrastructure/docker/postgres/init`). Adding a new service database to an existing volume
-requires creating it by hand or re-initialising the volume.
+Databases and roles are created when the PostgreSQL volume is first initialised
+(`infrastructure/docker/postgres/init`). A service database added later (maintenance-service in
+v3) is created on an existing volume by the one-shot `postgres-ensure` container, which runs
+before maintenance-service on every `up` and only creates what is missing.
+
+### Upgrading a v2 installation to v3
+
+1. `./scripts/titan.ps1 up` (or `docker compose ... up -d --build`). Migrations `0002_*` run at
+   service start; tenant-service gives every existing tenant the platform core,
+   `public-services` and `disaster-infrastructure` packs and announces them.
+2. `node scripts/identity-sync.mjs` adds the new roles and demo users to Keycloak.
+3. `npm run seed` creates the two v3 demonstration tenants and their data.
+
+Exercised on this workstation (the v2 stack and data upgraded in place). The first run of the
+existing tests against it is recorded, failures included, in the verification report.
 
 ### Configuration
 

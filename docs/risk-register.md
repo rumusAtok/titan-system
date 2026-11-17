@@ -48,7 +48,10 @@ M = medium, H = high.
 | S9 | Prompt-injection screening is pattern-based and can be evaded | M | M | Safety does not depend on it: tools are read-only, run with the user's token, and writes need human approval | Keep that structure; treat the screen as defence in depth only |
 | S10 | Audit records are append-only inside the database, not tamper-evident against a database administrator | L | M | The runtime role has no UPDATE, DELETE or TRUNCATE privilege, and triggers reject those statements | Hash chaining or export to write-once storage |
 | S11 | No dependency or image scanning has been run in CI | M | M | `npm audit --omit=dev` reported 0 vulnerabilities on 2026-11-13 | Run the CI workflow; add image scanning |
-| S12 | The GIS page makes each viewer's browser request map tiles from `tile.openstreetmap.org`: that third party sees the viewer's IP address and the area being looked at (no platform records are sent). The public server's usage policy also does not allow heavy or operational use | H | M | One setting (`MAP_TILE_URL` in `.env`) points it at another tile service or, with `none`, switches the background off so that nothing is requested from outside; the Content-Security-Policy allows only the configured origin. In the Helm chart the address is still fixed in the ConfigMap template | A self-hosted or contracted tile service inside the organisation's network |
+| S12 | The GIS page makes each viewer's browser request map tiles from `tile.openstreetmap.org`: that third party sees the viewer's IP address and the area being looked at (no platform records are sent). The public server's usage policy also does not allow heavy or operational use | H | M | One setting (`MAP_TILE_URL` in `.env`) points it at another tile service or, with `none`, switches the background off so that nothing is requested from outside; the Content-Security-Policy allows only the configured origin. In the Helm chart it is `global.mapTileUrl`, empty (no base map) by default | A self-hosted or contracted tile service inside the organisation's network |
+
+| S13 | A tenant's entitlements are cached by the Python services for 5 s and kept for up to 10 min while tenant-service is unreachable: a deactivated capability can stay readable through analytics and AI for that long | L | M | Node services use an event-fed projection (changes apply in seconds); unknown means no access | Event-fed projection in the Python services too |
+| S14 | A deactivated pack keeps its installed definitions, rules and categories: re-activation does not start clean, and an active alert rule of a deactivated pack still evaluates readings (it can no longer receive any, because the iot capability is withdrawn when no other pack provides it) | L | L | Deliberate: no data is deleted (ADR-0011) | An explicit 'retire templates' action with review |
 
 ### Reliability and data
 
@@ -66,6 +69,7 @@ M = medium, H = high.
 | R10 | Telemetry older than the retention window is dropped by partition, without being archived first; the maintenance job runs inside telemetry-service once a day | M | M | Monthly partitions; a default partition catches out-of-range timestamps | Agree the retention period; export partitions to the lake before dropping; alert if maintenance fails |
 | R11 | Incidents cannot be acknowledged while workflow-service is down (ADR-0005) | L | M | Incidents are still created, visible and notified | Run workflow-service with replicas |
 | R12 | The data pipeline runs on a timer inside one container; no orchestrator, no backfill tooling | M | L | Runs are idempotent and recorded; watermark is stored | A scheduler with retries and backfill |
+| R13 | Pack installation is asynchronous: for a few hundred milliseconds after activation a capability can be on while its templates are not yet installed (requests then fail with 'unknown request type') | M | L | The seed and tests wait for installation; resync re-announces | Activation status per owning service in the pack view |
 
 ### Product and process
 
@@ -74,12 +78,15 @@ M = medium, H = high.
 | P1 | Local test results are mistaken for readiness | M | H | Every document states the scope of verification | Staging environment, load tests, security assessment |
 | P2 | All data is synthetic; flood thresholds and sensor behaviour are invented | H | M | Labelled as synthetic in the simulator, seed and documentation | Calibration with the owning authority's real data |
 | P3 | The small local model gives weak answers; only two model sizes were ever tried | H | L | AI is optional and labelled; deterministic mode is the default | Evaluate models on real questions before enabling |
-| P4 | Accessibility was checked automatically on nine pages only | M | M | No critical or serious WCAG A/AA findings from the automated scan | Manual testing with assistive technology |
+| P4 | Accessibility was checked automatically on seventeen pages only | M | M | No critical or serious WCAG A/AA findings from the automated scan | Manual testing with assistive technology |
 | P5 | The interface is English only | H | M | — | Localisation |
 | P6 | TypeScript is pinned to 6.0.x because of one dependency (ADR-0003) | M | L | Recorded | Lift the pin when the dependency allows |
 | P7 | Kubernetes artifacts have never run; a first deployment will find errors | H | M | Lint and strict schema validation pass | A staging cluster |
 | P8 | Unit tests cannot run natively on the development machine (Application Control) | H | L | They run in the service image; same command in CI | — |
-| P9 | Nothing is committed to version control yet | H | M | The working tree is complete on disk | Commit and push to a protected remote |
+| P9 | v3 work is on the branch `feature/v3-industry-packs`, not yet committed or reviewed | H | M | v2 is committed and pushed (`c78f461`) | Commit, review, merge |
+| P10 | Industry pack thresholds (vibration, bearing temperature) are illustrative defaults, not engineering guidance | H | M | Labelled in the manifest help text and the procedure documents; adjustable per tenant | Set from the machine class and the operator's own baselines |
+| P11 | Packs describe roles but cannot create them: roles and users are managed in Keycloak, and permissions apply to the whole tenant (no per-site scoping) | H | M | Role templates shown to administrators; services enforce roles | Role provisioning from packs; site-scoped authorization |
+| P12 | maintenance-service is a minimum slice: no preventive schedules, spare parts, labour costing or inspection plans | H | M | Documented (ADR-0014) | Extend as real requirements are known |
 
 ## No safety-critical control
 

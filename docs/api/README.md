@@ -9,24 +9,42 @@ Errors use one shape: `{ "error": { "status", "code", "message", "details?", "co
 
 ## TITAN tenant-service (`/api/tenant`)
 
-Organisations, departments, jurisdictions, tenant configuration and organisational memberships.
+Organisations, sites, departments, memberships, and the industry-pack registry: catalogue, tenant activation, entitlements, workspace navigation and dashboards.
 
 Specification: [tenant.openapi.json](tenant.openapi.json)
 
 | Method | Path |
 | --- | --- |
+| DELETE | `/api/tenant/workspace/dashboards/{key}` |
 | GET | `/api/tenant/departments` |
+| GET | `/api/tenant/entitlements` |
 | GET | `/api/tenant/jurisdictions` |
 | GET | `/api/tenant/memberships` |
 | GET | `/api/tenant/memberships/me` |
+| GET | `/api/tenant/packs` |
+| GET | `/api/tenant/packs/catalog` |
+| GET | `/api/tenant/packs/catalog/{id}/{version}` |
+| GET | `/api/tenant/packs/export` |
+| GET | `/api/tenant/packs/history` |
+| GET | `/api/tenant/platform/capabilities` |
 | GET | `/api/tenant/roles` |
+| GET | `/api/tenant/sites` |
 | GET | `/api/tenant/tenants` |
 | GET | `/api/tenant/tenants/current` |
+| GET | `/api/tenant/workspace` |
 | POST | `/api/tenant/departments` |
 | POST | `/api/tenant/jurisdictions` |
+| POST | `/api/tenant/packs/import` |
+| POST | `/api/tenant/packs/{id}/activate` |
+| POST | `/api/tenant/packs/{id}/deactivate` |
+| POST | `/api/tenant/packs/{id}/resync` |
+| POST | `/api/tenant/platform/entitlements/republish` |
+| POST | `/api/tenant/sites` |
 | POST | `/api/tenant/tenants` |
 | PUT | `/api/tenant/memberships/{userId}` |
+| PUT | `/api/tenant/packs/{id}/config` |
 | PUT | `/api/tenant/tenants/current/config` |
+| PUT | `/api/tenant/workspace/dashboards/{key}` |
 
 ## TITAN case-service (`/api/case`)
 
@@ -63,6 +81,7 @@ Specification: [workflow.openapi.json](workflow.openapi.json)
 | GET | `/api/workflow/instances/by-subject/{subjectType}/{subjectId}` |
 | GET | `/api/workflow/instances/{id}` |
 | GET | `/api/workflow/stats` |
+| GET | `/api/workflow/subject-types` |
 | GET | `/api/workflow/tasks` |
 | POST | `/api/workflow/definitions` |
 | POST | `/api/workflow/delegations` |
@@ -104,11 +123,13 @@ Specification: [asset.openapi.json](asset.openapi.json)
 | GET | `/api/asset/assets/summary` |
 | GET | `/api/asset/assets/{id}` |
 | GET | `/api/asset/categories` |
+| GET | `/api/asset/categories/{code}/attribute-schemas` |
 | PATCH | `/api/asset/assets/{id}` |
 | POST | `/api/asset/assets` |
 | POST | `/api/asset/assets/{id}/maintenance` |
 | POST | `/api/asset/assets/{id}/status` |
 | POST | `/api/asset/categories` |
+| POST | `/api/asset/categories/{code}/attribute-schemas` |
 
 ## TITAN device-service (`/api/device`)
 
@@ -121,9 +142,12 @@ Specification: [device.openapi.json](device.openapi.json)
 | GET | `/api/device/devices` |
 | GET | `/api/device/devices/summary` |
 | GET | `/api/device/devices/{id}` |
+| GET | `/api/device/metric-types` |
+| GET | `/api/device/sensor-profiles` |
 | PATCH | `/api/device/devices/{id}/config` |
 | POST | `/api/device/devices` |
 | POST | `/api/device/devices/{id}/decommission` |
+| POST | `/api/device/sensor-profiles` |
 
 ## TITAN telemetry-service (`/api/telemetry`)
 
@@ -156,12 +180,13 @@ Specification: [alert.openapi.json](alert.openapi.json)
 
 ## TITAN incident-service (`/api/incident`)
 
-Incident lifecycle, severity, assignment and closure. Acknowledgment and resolution are applied from the incident-response workflow.
+Incident lifecycle, categories, typed origins, severity, assignment and closure. Acknowledgment and resolution are applied from the response workflow of the incident's category.
 
 Specification: [incident.openapi.json](incident.openapi.json)
 
 | Method | Path |
 | --- | --- |
+| GET | `/api/incident/categories` |
 | GET | `/api/incident/incidents` |
 | GET | `/api/incident/incidents/summary` |
 | GET | `/api/incident/incidents/{id}` |
@@ -169,6 +194,27 @@ Specification: [incident.openapi.json](incident.openapi.json)
 | POST | `/api/incident/incidents/{id}/assign` |
 | POST | `/api/incident/incidents/{id}/close` |
 | POST | `/api/incident/incidents/{id}/notes` |
+
+## TITAN maintenance-service (`/api/maintenance`)
+
+Maintenance and service requests, their approval outcome and work orders. Request types are installed by industry packs; approval is decided by the workflow each request type names.
+
+Specification: [maintenance.openapi.json](maintenance.openapi.json)
+
+| Method | Path |
+| --- | --- |
+| GET | `/api/maintenance/request-types` |
+| GET | `/api/maintenance/requests` |
+| GET | `/api/maintenance/requests/{id}` |
+| GET | `/api/maintenance/summary` |
+| GET | `/api/maintenance/work-orders` |
+| GET | `/api/maintenance/work-orders/{id}` |
+| POST | `/api/maintenance/requests` |
+| POST | `/api/maintenance/requests/{id}/cancel` |
+| POST | `/api/maintenance/work-orders/{id}/assign` |
+| POST | `/api/maintenance/work-orders/{id}/cancel` |
+| POST | `/api/maintenance/work-orders/{id}/complete` |
+| POST | `/api/maintenance/work-orders/{id}/start` |
 
 ## TITAN analytics-service (`/api/analytics`)
 
@@ -179,6 +225,7 @@ Specification: [analytics.openapi.json](analytics.openapi.json)
 | Method | Path |
 | --- | --- |
 | GET | `/api/analytics/datasets` |
+| GET | `/api/analytics/datasets/registry` |
 | GET | `/api/analytics/export/{dataset}` |
 | GET | `/api/analytics/kpis/approval-turnaround` |
 | GET | `/api/analytics/kpis/asset-maintenance` |
@@ -188,6 +235,7 @@ Specification: [analytics.openapi.json](analytics.openapi.json)
 | GET | `/api/analytics/kpis/summary` |
 | GET | `/api/analytics/kpis/water-level-trend` |
 | GET | `/api/analytics/query-templates` |
+| POST | `/api/analytics/datasets/{name}/query` |
 | POST | `/api/analytics/internal/refresh` |
 | POST | `/api/analytics/query-templates/{name}/run` |
 

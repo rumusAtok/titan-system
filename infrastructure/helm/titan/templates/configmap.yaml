@@ -32,5 +32,5 @@ data:
       realm: "titan",
       clientId: "titan-web",
       environment: {{ .Values.global.environment | quote }},
-      mapTileUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+      mapTileUrl: {{ .Values.global.mapTileUrl | quote }},
     };

@@ -11,17 +11,20 @@ import polars as pl
 from fastapi import Depends, FastAPI, Query, Response
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ValidationError
-from titan_pykit import Database, DomainError, Principal, create_app, require_roles
+from titan_pykit import Database, DomainError, EntitlementsClient, Principal, create_app, require_roles
 
+from . import datasets as registry
 from .templates import TEMPLATES, describe
 
 STAFF = (
     "validation_officer", "technical_officer", "department_head", "final_approver", "duty_officer", "incident_commander",
     "asset_manager", "iot_operator", "analyst", "auditor", "tenant_admin",
+    "production_supervisor", "maintenance_planner", "maintenance_technician", "facility_manager",
 )
 EXPORTERS = ("analyst", "tenant_admin")
 
-DATASETS = ["approval_turnaround", "pending_tasks", "incidents_by_severity", "sensor_availability", "water_level_trend", "asset_maintenance_status"]
+# Every read model, in registry order (the six original ones first).
+DATASETS = registry.NAMES
 
 
 def _rows_for_load(path: Path) -> list[dict[str, Any]]:
@@ -60,6 +63,8 @@ async def on_start(app: FastAPI) -> None:
     app.state.ro = Database(ro_url, f"{settings.service_name}-readonly", max_size=4) if ro_url else None
     if app.state.ro:
         app.state.ro.open()
+    # Which capabilities, query templates and packs the caller's tenant has (asked of tenant-service with the caller's token).
+    app.state.entitlements = EntitlementsClient(settings.get("TENANT_URL", ""))
     app.state.poller = asyncio.create_task(poll(app, int(settings.get("GOLD_POLL_SECONDS", "30"))))
 
 
@@ -209,13 +214,50 @@ async def datasets(user: Principal = Depends(require_roles(*STAFF))):
     return await asyncio.to_thread(query)
 
 
+# --- dataset registry (what dashboards read) -----------------------------------------
+
+
+async def entitled_dataset(user: Principal, name: str) -> registry.Dataset:
+    """The dataset, if it exists and the caller's tenant holds the capability it belongs to."""
+    dataset = registry.DATASETS.get(name)
+    if not dataset:
+        raise DomainError.not_found("dataset")
+    if dataset.capability is not None:
+        await app.state.entitlements.require(user, dataset.capability)
+    return dataset
+
+
+@app.get("/datasets/registry", tags=["datasets"], summary="Approved analytical datasets, their columns and filters, and whether the caller's tenant may read them")
+async def dataset_registry(user: Principal = Depends(require_roles(*STAFF))):
+    entitlements = await app.state.entitlements.of(user)
+    return registry.describe(entitlements.capabilities)
+
+
+class DatasetQuery(BaseModel):
+    model_config = {"extra": "forbid"}
+    # Equality filters on columns the dataset declares filterable.
+    filters: dict[str, str | bool] = {}
+    limit: int = 2000
+
+
+@app.post("/datasets/{name}/query", tags=["datasets"], summary="Read a registered dataset for the caller's tenant, with equality filters on its declared columns")
+async def query_dataset(name: str, body: DatasetQuery | None = None, user: Principal = Depends(require_roles(*STAFF))):
+    dataset = await entitled_dataset(user, name)
+    request = body or DatasetQuery()
+    try:
+        sql, params = registry.build_query(dataset, request.filters, request.limit)
+    except registry.FilterError as exc:
+        raise DomainError.invalid(str(exc)) from exc
+    rows = await asyncio.to_thread(tenant_query, user, sql, params)
+    return {"dataset": name, "filters": request.filters, "rows": rows, "row_count": len(rows), "freshness": await asyncio.to_thread(dataset_freshness, name)}
+
+
 # --- export ------------------------------------------------------------------------
 
 
 @app.get("/export/{dataset}", tags=["datasets"], summary="Export a dataset (the caller's tenant only) as CSV or Parquet")
 async def export(dataset: str, format: Literal["csv", "parquet"] = "csv", user: Principal = Depends(require_roles(*EXPORTERS))):
-    if dataset not in DATASETS:
-        raise DomainError.not_found("dataset")
+    await entitled_dataset(user, dataset)
     rows = await asyncio.to_thread(tenant_query, user, f"SELECT * FROM kpi_{dataset}")  # validated against DATASETS above
     if rows:
         df = pl.DataFrame([{k: (str(v) if k.endswith("_id") else v) for k, v in r.items()} for r in rows], infer_schema_length=None)
@@ -238,8 +280,10 @@ async def export(dataset: str, format: Literal["csv", "parquet"] = "csv", user: 
 
 
 @app.get("/query-templates", tags=["query-templates"], summary="Approved parameterised analytical queries")
-async def list_templates(_: Principal = Depends(require_roles(*STAFF))):
-    return describe()
+async def list_templates(user: Principal = Depends(require_roles(*STAFF))):
+    # Only the templates the tenant's active packs make available.
+    entitlements = await app.state.entitlements.of(user)
+    return [t for t in describe() if t["name"] in entitlements.query_templates]
 
 
 class TemplateRun(BaseModel):
@@ -251,6 +295,12 @@ async def run_template(name: str, body: TemplateRun | None = None, user: Princip
     template = TEMPLATES.get(name)
     if not template:
         raise DomainError.not_found("query template")
+    # A template is available to a tenant only through a pack that registers it. Unknown entitlements fail closed.
+    entitlements = await app.state.entitlements.of(user)
+    if not entitlements.known:
+        raise DomainError.unavailable("entitlements_unavailable", "the tenant's entitlements could not be determined")
+    if name not in entitlements.query_templates:
+        raise DomainError(403, "capability_disabled", f"the query template '{name}' is not available to your organisation", {"query_template": name})
     try:
         params = template.params.model_validate((body.params if body else {}) or {})
     except ValidationError as exc:

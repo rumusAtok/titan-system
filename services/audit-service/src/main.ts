@@ -30,6 +30,7 @@ const AUDITED_SUBJECTS = [
   'device.>',
   'alert.>',
   'incident.>',
+  'maintenance.>',
   'notification.>',
   'security.>',
   'ai.>',

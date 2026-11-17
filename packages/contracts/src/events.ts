@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { EventEnvelopeSchema, type EventEnvelope } from './envelope.js';
+import { IncidentSourceTypeSchema, SubjectTypeSchema } from './subjects.js';
 
 const uuid = z.uuid();
 const ts = z.iso.datetime({ offset: true });
@@ -7,7 +8,6 @@ const nullableTs = ts.nullable();
 
 export const SeveritySchema = z.enum(['info', 'warning', 'critical']);
 export const QualitySchema = z.enum(['ok', 'out_of_range', 'late', 'future_timestamp']);
-export const SubjectTypeSchema = z.enum(['case', 'incident']);
 export const DecisionSchema = z.enum(['approve', 'reject', 'return']);
 
 /**
@@ -20,6 +20,36 @@ export const EventCatalog = {
   'tenant.created.v1': z.object({ tenant_id: uuid, name: z.string(), slug: z.string() }),
   'tenant.department.created.v1': z.object({ department_id: uuid, code: z.string(), name: z.string() }),
   'tenant.config.updated.v1': z.object({ tenant_id: uuid, keys: z.array(z.string()) }),
+  'tenant.site.created.v1': z.object({ site_id: uuid, code: z.string(), name: z.string(), kind: z.string(), parent_id: uuid.nullable() }),
+  /**
+   * A pack was activated, upgraded, reconfigured or re-synchronised for a
+   * tenant. `install` carries the templates each owning service installs
+   * (idempotently) for that tenant; sections are validated by their owners.
+   */
+  'tenant.pack.activated.v1': z.object({
+    tenant_id: uuid,
+    pack_id: z.string(),
+    version: z.string(),
+    previous_version: z.string().nullable(),
+    reason: z.enum(['activated', 'upgraded', 'reconfigured', 'resync']),
+    install: z.object({
+      workflows: z.array(z.record(z.string(), z.unknown())),
+      forms: z.array(z.record(z.string(), z.unknown())),
+      asset_categories: z.array(z.record(z.string(), z.unknown())),
+      sensor_profiles: z.array(z.record(z.string(), z.unknown())),
+      alert_rules: z.array(z.record(z.string(), z.unknown())),
+      incident_categories: z.array(z.record(z.string(), z.unknown())),
+      request_types: z.array(z.record(z.string(), z.unknown())),
+    }),
+  }),
+  'tenant.pack.deactivated.v1': z.object({ tenant_id: uuid, pack_id: z.string(), version: z.string(), deactivated_by: z.string() }),
+  /** Complete entitlement state of a tenant. `revision` only grows, so consumers can ignore stale deliveries. */
+  'tenant.entitlements.changed.v1': z.object({
+    tenant_id: uuid,
+    revision: z.number().int().positive(),
+    capabilities: z.array(z.string()),
+    packs: z.array(z.object({ id: z.string(), version: z.string() })),
+  }),
 
   // --- case-service ---
   'case.submitted.v1': z.object({
@@ -44,6 +74,22 @@ export const EventCatalog = {
   'case.cancelled.v1': z.object({ case_id: uuid, reference_no: z.string(), cancelled_by: z.string() }),
 
   // --- workflow-service ---
+  /**
+   * Generic process start for any registered subject type, emitted by the
+   * service that owns the subject. (Cases and incidents keep their original
+   * triggers, `case.submitted.v1` and `incident.created.v1`.)
+   */
+  'workflow.start.requested.v1': z.object({
+    subject_type: SubjectTypeSchema,
+    subject_id: uuid,
+    workflow_key: z.string(),
+    reference: z.string(),
+    title: z.string(),
+    /** Person the process is run for; they can never decide on it themselves. */
+    requester_id: z.string().nullable(),
+    context: z.record(z.string(), z.unknown()),
+  }),
+  'workflow.cancel.requested.v1': z.object({ subject_type: SubjectTypeSchema, subject_id: uuid, cancelled_by: z.string() }),
   'workflow.instance.started.v1': z.object({
     instance_id: uuid,
     subject_type: SubjectTypeSchema,
@@ -246,6 +292,10 @@ export const EventCatalog = {
     operator: z.string().nullable(),
     create_incident: z.boolean(),
     triggered_at: ts,
+    /** Category of the incident to open (added in TITAN v3; absent means `general`). */
+    incident_category: z.string().nullable().optional(),
+    /** Asset the device is attached to, when known (added in TITAN v3). */
+    asset_id: uuid.nullable().optional(),
   }),
   'alert.acknowledged.v1': z.object({ alert_id: uuid, acknowledged_by: z.string(), acknowledged_at: ts }),
   'alert.cleared.v1': z.object({ alert_id: uuid, device_id: uuid, value: z.number().nullable(), cleared_at: ts }),
@@ -256,10 +306,15 @@ export const EventCatalog = {
     reference_no: z.string(),
     title: z.string(),
     severity: SeveritySchema,
-    source_type: z.enum(['alert', 'manual']),
+    source_type: IncidentSourceTypeSchema,
     source_id: z.string().nullable(),
     device_id: uuid.nullable(),
     created_at: ts,
+    // Added in TITAN v3 (optional, so events written before it stay valid).
+    category: z.string().optional(),
+    asset_id: uuid.nullable().optional(),
+    /** Response workflow configured for the category; absent means `incident-response`. */
+    workflow_key: z.string().optional(),
   }),
   'incident.acknowledged.v1': z.object({
     incident_id: uuid,
@@ -276,6 +331,82 @@ export const EventCatalog = {
     resolved_at: ts,
     created_at: ts,
   }),
+
+  // --- maintenance-service ---
+  'maintenance.request.submitted.v1': z.object({
+    request_id: uuid,
+    reference_no: z.string(),
+    request_type: z.string(),
+    /** Industry pack of the request type (added after the first release of these events, so optional). */
+    pack_id: z.string().optional(),
+    subject_type: z.enum(['maintenance_request', 'service_request']),
+    title: z.string(),
+    priority: z.string(),
+    origin_type: z.string(),
+    origin_id: z.string().nullable(),
+    asset_id: uuid.nullable(),
+    requested_by: z.string().nullable(),
+    submitted_at: ts,
+  }),
+  'maintenance.request.decided.v1': z.object({
+    request_id: uuid,
+    reference_no: z.string(),
+    request_type: z.string(),
+    /** Industry pack of the request type (added after the first release of these events, so optional). */
+    pack_id: z.string().optional(),
+    outcome: z.enum(['approved', 'rejected', 'cancelled']),
+    submitted_at: ts,
+    decided_at: ts,
+  }),
+  'maintenance.work_order.created.v1': z.object({
+    work_order_id: uuid,
+    reference_no: z.string(),
+    request_id: uuid,
+    request_type: z.string(),
+    /** Industry pack of the request type (added after the first release of these events, so optional). */
+    pack_id: z.string().optional(),
+    title: z.string(),
+    priority: z.string(),
+    asset_id: uuid.nullable(),
+    origin_type: z.string(),
+    origin_id: z.string().nullable(),
+    created_at: ts,
+  }),
+  'maintenance.work_order.assigned.v1': z.object({
+    work_order_id: uuid,
+    reference_no: z.string(),
+    assignee_id: z.string(),
+    assignee_username: z.string(),
+    assigned_by: z.string(),
+  }),
+  'maintenance.work_order.started.v1': z.object({
+    work_order_id: uuid,
+    reference_no: z.string(),
+    asset_id: uuid.nullable(),
+    started_by: z.string(),
+    started_at: ts,
+  }),
+  'maintenance.work_order.completed.v1': z.object({
+    work_order_id: uuid,
+    reference_no: z.string(),
+    request_id: uuid,
+    request_type: z.string(),
+    /** Industry pack of the request type (added after the first release of these events, so optional). */
+    pack_id: z.string().optional(),
+    asset_id: uuid.nullable(),
+    origin_type: z.string(),
+    origin_id: z.string().nullable(),
+    /** Asset condition recorded by the technician, when the work was on an asset. */
+    condition_after: z.enum(['good', 'fair', 'poor', 'critical']).nullable(),
+    labor_hours: z.number().nullable(),
+    summary: z.string(),
+    completed_by: z.string(),
+    completed_by_username: z.string(),
+    created_at: ts,
+    started_at: nullableTs,
+    completed_at: ts,
+  }),
+  'maintenance.work_order.cancelled.v1': z.object({ work_order_id: uuid, reference_no: z.string(), asset_id: uuid.nullable(), cancelled_by: z.string(), reason: z.string() }),
 
   // --- notification-service ---
   'notification.requested.v1': z

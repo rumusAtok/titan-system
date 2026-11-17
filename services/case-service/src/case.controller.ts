@@ -1,14 +1,15 @@
 import { Controller, Get, HttpCode, Inject, Param, Patch, Post, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, type Principal, RequireRoles } from '@titan/authentication';
-import { Roles } from '@titan/contracts';
-import { uuidParam, ZBody, ZQuery } from '@titan/platform';
+import { Capabilities, Roles } from '@titan/contracts';
+import { RequireCapability, uuidParam, ZBody, ZQuery } from '@titan/platform';
 import type { z } from 'zod';
 import { CaseService, CreateCase, CreateForm, ListCases, UpdateCase, UploadAttachment } from './case.service.js';
 
 @ApiTags('cases')
 @ApiBearerAuth()
 @Controller()
+@RequireCapability(Capabilities.CaseManagement)
 export class CaseController {
   constructor(@Inject(CaseService) private readonly cases: CaseService) {}
 

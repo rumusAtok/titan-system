@@ -3,8 +3,11 @@
 //
 //   node scripts/seed.mjs
 //
-// Everything created here is fictional demonstration data.
-import { api, ApiError, claimsOf, rawApi, TENANT_A, TENANT_B, tokenFor } from './lib/titan-client.mjs';
+// Each tenant gets its industry packs activated; the packs install the
+// workflows, forms, asset categories, sensor profiles, alert rules, incident
+// categories and request types. The seed then adds organisation data, assets
+// and devices. Everything created here is fictional demonstration data.
+import { api, ApiError, claimsOf, rawApi, TENANT_A, TENANT_B, TENANT_C, TENANT_D, tokenFor, waitFor } from './lib/titan-client.mjs';
 
 const created = [];
 const note = (what) => {
@@ -22,120 +25,34 @@ async function ensure(user, listPath, createPath, keyField, body, label) {
   return result;
 }
 
-async function upstreamAvailable(user, path) {
-  const res = await rawApi(user, 'GET', path);
-  return res.status === 200;
-}
+const daysFromNow = (d) => new Date(Date.now() + d * 86_400_000).toISOString();
 
-// --- definitions -------------------------------------------------------------
+// --- tenants -------------------------------------------------------------------
 
-const DEPARTMENTS = [
+const GOVERNMENT_DEPARTMENTS = [
   { code: 'PERMITS', name: 'Permits and Licensing' },
   { code: 'ENGINEERING', name: 'Engineering and Infrastructure' },
   { code: 'OPERATIONS', name: 'Operations and Emergency Response' },
   { code: 'EXECUTIVE', name: 'Executive Office' },
 ];
 
-const WORKFLOWS = [
-  {
-    key: 'building-permit',
-    name: 'Building permit approval',
-    subject_type: 'case',
-    definition: {
-      allow_return: true,
-      applicant_notifications: ['submitted', 'returned', 'approved', 'rejected'],
-      stages: [
-        { key: 'validation', name: 'Validation', type: 'single', roles: ['validation_officer'], sla_hours: 24, escalate_to_role: 'department_head' },
-        { key: 'technical_review', name: 'Technical review', type: 'single', roles: ['technical_officer'], sla_hours: 72, escalate_to_role: 'department_head' },
-        { key: 'department_endorsement', name: 'Department endorsement', type: 'single', roles: ['department_head'], sla_hours: 48, escalate_to_role: 'final_approver' },
-        { key: 'final_approval', name: 'Final approval', type: 'single', roles: ['final_approver'], sla_hours: 48 },
-      ],
-    },
-  },
-  {
-    // Demonstrates parallel review and conditional routing.
-    key: 'event-permit',
-    name: 'Public event permit',
-    subject_type: 'case',
-    definition: {
-      allow_return: true,
-      applicant_notifications: ['returned', 'approved', 'rejected'],
-      stages: [
-        { key: 'validation', name: 'Validation', type: 'single', roles: ['validation_officer'], sla_hours: 24 },
-        { key: 'joint_review', name: 'Joint technical and department review', type: 'parallel', roles: ['technical_officer', 'department_head'], sla_hours: 48 },
-        {
-          key: 'final_approval',
-          name: 'Final approval (large events)',
-          type: 'single',
-          roles: ['final_approver'],
-          sla_hours: 48,
-          condition: { field: 'expected_attendance', op: 'gte', value: 1000 },
-        },
-      ],
-    },
-  },
-  {
-    key: 'incident-response',
-    name: 'Incident response',
-    subject_type: 'incident',
-    definition: {
-      allow_return: false,
-      applicant_notifications: [],
-      stages: [
-        { key: 'acknowledge', name: 'Acknowledge incident', type: 'single', roles: ['duty_officer'], sla_hours: 0.25, escalate_to_role: 'incident_commander' },
-        { key: 'resolve', name: 'Resolve incident', type: 'single', roles: ['incident_commander'], sla_hours: 8 },
-      ],
-    },
-  },
+const FLOOD_SENSORS = [
+  { kind: 'water_level', unit: 'm', min_valid: 0, max_valid: 15 },
+  { kind: 'rainfall', unit: 'mm/h', min_valid: 0, max_valid: 500 },
+  { kind: 'battery', unit: 'V', min_valid: 0, max_valid: 15 },
 ];
 
-const FORMS = [
-  {
-    key: 'building-permit',
-    title: 'Building permit application',
-    description: 'Apply for permission to construct or alter a building.',
-    workflow_key: 'building-permit',
-    fields: [
-      { name: 'applicant_name', label: 'Applicant name', type: 'text', required: true, max_length: 200 },
-      { name: 'site_address', label: 'Site address', type: 'textarea', required: true, max_length: 1000 },
-      { name: 'project_type', label: 'Project type', type: 'select', required: true, options: ['residential', 'commercial', 'industrial'] },
-      { name: 'floor_area_m2', label: 'Floor area (m²)', type: 'number', required: true, min: 1, max: 1000000 },
-      { name: 'estimated_cost', label: 'Estimated cost', type: 'number', required: false, min: 0 },
-      { name: 'start_date', label: 'Planned start date', type: 'date', required: false },
-      { name: 'declaration', label: 'I declare the information given is correct', type: 'boolean', required: true },
-    ],
-  },
-  {
-    key: 'event-permit',
-    title: 'Public event permit application',
-    description: 'Apply to hold an event in a public space.',
-    workflow_key: 'event-permit',
-    fields: [
-      { name: 'event_name', label: 'Event name', type: 'text', required: true, max_length: 200 },
-      { name: 'venue', label: 'Venue', type: 'text', required: true, max_length: 300 },
-      { name: 'event_date', label: 'Event date', type: 'date', required: true },
-      { name: 'expected_attendance', label: 'Expected attendance', type: 'number', required: true, min: 1, max: 1000000 },
-      { name: 'contact_email', label: 'Contact e-mail', type: 'email', required: false },
-    ],
-  },
-];
-
-const ASSET_CATEGORIES = [
-  { code: 'PUMP_STATION', name: 'Pump station' },
-  { code: 'FLOOD_GATE', name: 'Flood gate' },
-  { code: 'DRAINAGE', name: 'Drainage channel' },
-  { code: 'RIVER_GAUGE', name: 'River gauging site' },
-];
-
-const daysFromNow = (d) => new Date(Date.now() + d * 86_400_000).toISOString();
-
-// Fictional coordinates laid out along an imaginary river.
-const SITES = {
+// Fictional coordinates. `expect` lists what the tenant's packs must have installed before the seed continues.
+const TENANTS = {
   [TENANT_A]: {
     admin: 'adam.admin',
     slug: 'riverbend',
     name: 'Riverbend City Council',
     origin: [3.07, 101.52],
+    packs: [{ id: 'public-services' }, { id: 'disaster-infrastructure' }],
+    expect: { workflows: ['incident-response', 'building-permit', 'event-permit'], forms: ['building-permit', 'event-permit'], categories: ['PUMP_STATION', 'FLOOD_GATE', 'DRAINAGE', 'RIVER_GAUGE'], rules: ['High water level'], iot: true },
+    departments: GOVERNMENT_DEPARTMENTS,
+    sites: [],
     assets: [
       { code: 'RB-NET', name: 'Riverbend flood defence network', category_code: 'DRAINAGE', status: 'active', condition: 'good', offset: [0, 0], due: 120 },
       { code: 'RB-PS-01', name: 'North Bank pump station', category_code: 'PUMP_STATION', status: 'active', condition: 'good', offset: [0.012, 0.004], due: 45, parent: 'RB-NET' },
@@ -150,66 +67,156 @@ const SITES = {
       { serial_no: 'RB-WL-002', name: 'Old Bridge level sensor', asset: 'RB-FG-01', offset: [-0.006, 0.011] },
       { serial_no: 'RB-WL-003', name: 'Market Quarter level sensor', asset: 'RB-PS-02', offset: [0.004, 0.019] },
       { serial_no: 'RB-WL-004', name: 'Eastside channel level sensor', asset: 'RB-DR-07', offset: [-0.014, 0.027] },
-    ],
+    ].map((d) => ({ ...d, device_type: 'flood-monitoring-station', sensors: FLOOD_SENSORS })),
   },
   [TENANT_B]: {
     admin: 'brian.admin',
     slug: 'northfield',
     name: 'Northfield District Authority',
     origin: [5.41, 100.34],
+    packs: [{ id: 'public-services' }, { id: 'disaster-infrastructure' }],
+    expect: { workflows: ['incident-response', 'building-permit', 'event-permit'], forms: ['building-permit', 'event-permit'], categories: ['PUMP_STATION', 'RIVER_GAUGE'], rules: ['High water level'], iot: true },
+    departments: GOVERNMENT_DEPARTMENTS,
+    sites: [],
     assets: [
       { code: 'NF-PS-01', name: 'Northfield central pump station', category_code: 'PUMP_STATION', status: 'active', condition: 'good', offset: [0, 0], due: 60 },
       { code: 'NF-RG-01', name: 'Northfield river gauging site', category_code: 'RIVER_GAUGE', status: 'active', condition: 'good', offset: [0.01, 0.01], due: 90 },
     ],
-    devices: [{ serial_no: 'NF-WL-001', name: 'Northfield river level sensor', asset: 'NF-RG-01', offset: [0.01, 0.01] }],
+    devices: [{ serial_no: 'NF-WL-001', name: 'Northfield river level sensor', asset: 'NF-RG-01', offset: [0.01, 0.01], device_type: 'flood-monitoring-station', sensors: FLOOD_SENSORS }],
+  },
+  // One organisation, two industries: a manufacturer that also manages its own buildings.
+  [TENANT_C]: {
+    admin: 'maya.admin',
+    slug: 'meridian',
+    name: 'Meridian Industrial Group',
+    origin: [1.47, 103.76],
+    packs: [{ id: 'manufacturing' }, { id: 'facilities' }],
+    expect: {
+      workflows: ['incident-response', 'equipment-incident-response', 'maintenance-approval', 'facility-request-approval', 'inspection-follow-up'],
+      forms: [],
+      categories: ['CNC_MACHINE', 'CONVEYOR', 'PRODUCTION_LINE', 'BUILDING', 'HVAC_UNIT', 'ELEVATOR'],
+      rules: ['High machine vibration'],
+      requestTypes: ['equipment-repair', 'facility-service-request', 'inspection-finding'],
+      iot: true,
+    },
+    departments: [
+      { code: 'PRODUCTION', name: 'Production' },
+      { code: 'MAINTENANCE', name: 'Maintenance' },
+      { code: 'FACILITIES', name: 'Facilities' },
+      { code: 'FINANCE', name: 'Finance' },
+      { code: 'EXECUTIVE', name: 'Executive Office' },
+    ],
+    sites: [
+      { code: 'MER-PLANT-1', name: 'Meridian Plant 1', kind: 'plant', offset: [0, 0] },
+      { code: 'MER-LINE-A', name: 'Machining line A', kind: 'line', parent: 'MER-PLANT-1' },
+      { code: 'MER-HQ', name: 'Meridian head office', kind: 'building', offset: [0.02, 0.015] },
+    ],
+    assets: [
+      { code: 'MER-LINE-A', name: 'Machining line A', category_code: 'PRODUCTION_LINE', status: 'active', condition: 'good', offset: [0, 0], due: 90, site: 'MER-LINE-A', attributes: {} },
+      {
+        code: 'MER-CNC-01', name: 'CNC machining centre 1', category_code: 'CNC_MACHINE', status: 'active', condition: 'good', offset: [0.0004, 0.0003], due: 30, parent: 'MER-LINE-A', site: 'MER-LINE-A',
+        attributes: { manufacturer: 'Synthetic Machine Works', model: 'VMC-850', serial_number: 'SMW-850-0001', rated_power_kw: 22, commissioning_year: 2021, synthetic: true },
+      },
+      {
+        code: 'MER-CNC-02', name: 'CNC machining centre 2', category_code: 'CNC_MACHINE', status: 'active', condition: 'fair', offset: [0.0006, 0.0005], due: 12, parent: 'MER-LINE-A', site: 'MER-LINE-A',
+        attributes: { manufacturer: 'Synthetic Machine Works', model: 'VMC-850', serial_number: 'SMW-850-0002', rated_power_kw: 22, commissioning_year: 2019, synthetic: true },
+      },
+      { code: 'MER-CONV-01', name: 'Line A outfeed conveyor', category_code: 'CONVEYOR', status: 'active', condition: 'good', offset: [0.0008, 0.0002], due: 60, parent: 'MER-LINE-A', site: 'MER-LINE-A', attributes: { length_m: 18, belt_type: 'modular', synthetic: true } },
+      { code: 'MER-HQ', name: 'Meridian head office building', category_code: 'BUILDING', status: 'active', condition: 'good', offset: [0.02, 0.015], due: 180, site: 'MER-HQ', attributes: { floor_area_m2: 4200, floors: 4, year_built: 2012, use: 'office', synthetic: true } },
+      { code: 'MER-HVAC-01', name: 'Head office rooftop HVAC unit', category_code: 'HVAC_UNIT', status: 'active', condition: 'fair', offset: [0.02, 0.015], due: 14, parent: 'MER-HQ', site: 'MER-HQ', attributes: { manufacturer: 'Synthetic Climate Co', cooling_capacity_kw: 120, refrigerant: 'R-32', synthetic: true } },
+      { code: 'MER-LIFT-01', name: 'Head office passenger elevator', category_code: 'ELEVATOR', status: 'active', condition: 'good', offset: [0.02, 0.015], due: 25, parent: 'MER-HQ', site: 'MER-HQ', attributes: { synthetic: true } },
+    ],
+    devices: [
+      { serial_no: 'MER-MCM-001', name: 'CNC 1 condition monitor', asset: 'MER-CNC-01', offset: [0.0004, 0.0003], profile_key: 'machine-condition-monitor' },
+      { serial_no: 'MER-MCM-002', name: 'CNC 2 condition monitor', asset: 'MER-CNC-02', offset: [0.0006, 0.0005], profile_key: 'machine-condition-monitor' },
+    ],
+  },
+  // Starts with the facilities pack only; the pack lifecycle tests change its packs.
+  [TENANT_D]: {
+    admin: 'dora.admin',
+    slug: 'harbourline',
+    name: 'Harbourline Properties',
+    origin: [22.29, 114.16],
+    packs: [{ id: 'facilities' }],
+    expect: { workflows: ['incident-response', 'facility-request-approval'], forms: [], categories: ['BUILDING'], rules: [], requestTypes: ['facility-service-request'], iot: false },
+    departments: [{ code: 'OPERATIONS', name: 'Operations' }, { code: 'EXECUTIVE', name: 'Executive Office' }],
+    sites: [{ code: 'HBL-TOWER', name: 'Harbourline Tower', kind: 'building', offset: [0, 0] }],
+    assets: [{ code: 'HBL-TOWER', name: 'Harbourline Tower', category_code: 'BUILDING', status: 'active', condition: 'good', offset: [0, 0], due: 100, site: 'HBL-TOWER', attributes: { floor_area_m2: 18000, floors: 22, year_built: 2008, use: 'office', synthetic: true } }],
+    devices: [],
   },
 };
 
-const SENSORS = [
-  { kind: 'water_level', unit: 'm', min_valid: 0, max_valid: 15 },
-  { kind: 'rainfall', unit: 'mm/h', min_valid: 0, max_valid: 500 },
-  { kind: 'battery', unit: 'V', min_valid: 0, max_valid: 15 },
-];
+async function probe(user, path) {
+  return (await rawApi(user, 'GET', path)).status;
+}
 
-const ALERT_RULES = [
-  { name: 'High water level', sensor_kind: 'water_level', operator: 'gt', threshold: 3.5, clear_threshold: 3.2, severity: 'warning', create_incident: true },
-  { name: 'Critical water level', sensor_kind: 'water_level', operator: 'gt', threshold: 4.5, clear_threshold: 4.2, severity: 'critical', create_incident: true },
-  { name: 'Heavy rainfall', sensor_kind: 'rainfall', operator: 'gte', threshold: 50, clear_threshold: 40, severity: 'warning', create_incident: false },
-  { name: 'Low sensor battery', sensor_kind: 'battery', operator: 'lt', threshold: 11, clear_threshold: 11.5, severity: 'info', create_incident: false },
-];
+/** Activates the tenant's packs and waits until every owning service has installed their templates. */
+async function activatePacks(tenant) {
+  const admin = tenant.admin;
+  const current = await api(admin, 'GET', '/api/tenant/packs');
+  for (const pack of tenant.packs) {
+    const have = current.find((p) => p.pack_id === pack.id);
+    // An existing activation is left as it is (whatever its version): the seed never upgrades or re-enables a pack.
+    if (have) continue;
+    const result = await api(admin, 'POST', `/api/tenant/packs/${pack.id}/activate`, pack.version ? { version: pack.version } : {});
+    note(`pack ${pack.id}@${result.pack.version}`);
+  }
+  const e = tenant.expect;
+  const has = async (path, field, wanted) => {
+    if (!wanted?.length) return true;
+    const res = await rawApi(admin, 'GET', path);
+    if (res.status !== 200) return res.status === 502 || res.status === 503 ? 'unavailable' : false;
+    const present = new Set(res.body.map((r) => r[field]));
+    return wanted.every((w) => present.has(w));
+  };
+  // Installation is asynchronous (events). A service whose profile is not running is skipped, not waited for.
+  await waitFor(
+    async () => {
+      const checks = [
+        await has('/api/workflow/definitions', 'key', e.workflows),
+        await has('/api/case/forms', 'key', e.forms),
+        await has('/api/asset/categories', 'code', e.categories),
+        await has('/api/alert/rules', 'name', e.rules),
+        await has('/api/maintenance/request-types', 'key', e.requestTypes),
+      ];
+      return checks.every((c) => c === true || c === 'unavailable');
+    },
+    { timeoutMs: 90_000, intervalMs: 1_000, what: `the packs of ${tenant.slug} to be installed by their owning services` },
+  );
+}
 
-// --- run -----------------------------------------------------------------------
+async function seedTenant(tenantId, tenant) {
+  const admin = tenant.admin;
+  console.log(`\nTenant ${tenant.name}`);
 
-async function seedTenant(tenantId, site) {
-  const admin = site.admin;
-  console.log(`\nTenant ${site.name}`);
-
-  // Tenant (platform administrator).
+  // Tenant (platform administrator). A new tenant starts with the platform core only.
   const tenants = await api('pat.platform', 'GET', '/api/tenant/tenants');
   if (!tenants.some((t) => t.id === tenantId)) {
-    await api('pat.platform', 'POST', '/api/tenant/tenants', { id: tenantId, slug: site.slug, name: site.name, settings: { timezone: 'UTC', locale: 'en' } });
-    note(`tenant ${site.slug}`);
+    await api('pat.platform', 'POST', '/api/tenant/tenants', { id: tenantId, slug: tenant.slug, name: tenant.name, settings: { timezone: 'UTC', locale: 'en' } });
+    note(`tenant ${tenant.slug}`);
   }
+
+  await activatePacks(tenant);
 
   // Organisation.
-  const departments = {};
-  for (const d of DEPARTMENTS) departments[d.code] = await ensure(admin, '/api/tenant/departments', '/api/tenant/departments', 'code', d, 'department');
-
-  // Workflow definitions and forms. A definition is only (re)published when missing,
-  // so re-running the seed does not create a new version every time.
-  const definitions = await api(admin, 'GET', '/api/workflow/definitions');
-  for (const w of WORKFLOWS) {
-    if (!definitions.some((d) => d.key === w.key && d.active)) {
-      await api(admin, 'POST', '/api/workflow/definitions', w);
-      note(`workflow ${w.key}`);
-    }
+  for (const d of tenant.departments) await ensure(admin, '/api/tenant/departments', '/api/tenant/departments', 'code', d, 'department');
+  const sites = Object.fromEntries((await api(admin, 'GET', '/api/tenant/sites')).map((s) => [s.code, s]));
+  for (const s of tenant.sites) {
+    if (sites[s.code]) continue;
+    sites[s.code] = await api(admin, 'POST', '/api/tenant/sites', {
+      code: s.code,
+      name: s.name,
+      kind: s.kind,
+      parent_id: s.parent ? sites[s.parent].id : null,
+      latitude: s.offset ? tenant.origin[0] + s.offset[0] : null,
+      longitude: s.offset ? tenant.origin[1] + s.offset[1] : null,
+    });
+    note(`site ${s.code}`);
   }
-  for (const f of FORMS) await ensure(admin, '/api/case/forms', '/api/case/forms', 'key', f, 'form');
 
-  // Assets.
-  for (const c of ASSET_CATEGORIES) await ensure(admin, '/api/asset/categories', '/api/asset/categories', 'code', c, 'asset category');
+  // Assets. Attributes are validated against the category's attribute schema, where the pack defines one.
   const assets = Object.fromEntries((await api(admin, 'GET', '/api/asset/assets?limit=500')).map((a) => [a.code, a]));
-  for (const a of site.assets) {
+  for (const a of tenant.assets) {
     if (assets[a.code]) continue;
     assets[a.code] = await api(admin, 'POST', '/api/asset/assets', {
       code: a.code,
@@ -217,45 +224,56 @@ async function seedTenant(tenantId, site) {
       category_code: a.category_code,
       status: a.status,
       condition: a.condition,
-      latitude: site.origin[0] + a.offset[0],
-      longitude: site.origin[1] + a.offset[1],
+      latitude: tenant.origin[0] + a.offset[0],
+      longitude: tenant.origin[1] + a.offset[1],
       parent_id: a.parent ? assets[a.parent].id : null,
-      attributes: { synthetic: true },
+      site_id: a.site ? (sites[a.site]?.id ?? null) : null,
+      attributes: a.attributes ?? { synthetic: true },
       next_maintenance_due: a.due === null ? null : daysFromNow(a.due),
     });
     note(`asset ${a.code}`);
   }
 
-  // IoT (only when the iot profile is running).
-  if (await upstreamAvailable(admin, '/api/device/devices')) {
-    for (const d of site.devices) {
-      await ensure(
-        admin,
-        '/api/device/devices?limit=500',
-        '/api/device/devices',
-        'serial_no',
-        {
-          serial_no: d.serial_no,
-          name: d.name,
-          device_type: 'flood-monitoring-station',
-          asset_id: assets[d.asset]?.id ?? null,
-          latitude: site.origin[0] + d.offset[0],
-          longitude: site.origin[1] + d.offset[1],
-          expected_interval_seconds: 5,
-          config: { synthetic: true, firmware: 'sim-1.0' },
-          sensors: SENSORS,
-        },
-        'device',
-      );
-    }
-    for (const r of ALERT_RULES) await ensure(admin, '/api/alert/rules', '/api/alert/rules', 'name', r, 'alert rule');
-  } else {
-    console.log('  (iot profile not running: devices and alert rules skipped)');
+  // Devices (only when the tenant has the iot capability and the iot profile is running).
+  if (tenant.devices.length === 0) return;
+  // The capability reaches device-service by event: allow it a moment after a first activation.
+  const status = await waitFor(async () => {
+    const s = await probe(admin, '/api/device/devices');
+    return s === 403 ? null : s;
+  }, { timeoutMs: 30_000, intervalMs: 1_000, what: `the iot capability of ${tenant.slug} to reach device-service` }).catch(() => 403);
+  if (status !== 200) {
+    console.log('  (iot profile not running: devices skipped)');
+    return;
+  }
+  if (tenant.devices.some((d) => d.profile_key)) {
+    await waitFor(async () => {
+      const profiles = new Set((await api(admin, 'GET', '/api/device/sensor-profiles')).map((p) => p.key));
+      return tenant.devices.every((d) => !d.profile_key || profiles.has(d.profile_key));
+    }, { timeoutMs: 60_000, intervalMs: 1_000, what: 'sensor profiles to be installed' });
+  }
+  for (const d of tenant.devices) {
+    await ensure(
+      admin,
+      '/api/device/devices?limit=500',
+      '/api/device/devices',
+      'serial_no',
+      {
+        serial_no: d.serial_no,
+        name: d.name,
+        ...(d.profile_key ? { profile_key: d.profile_key } : { device_type: d.device_type, sensors: d.sensors }),
+        asset_id: assets[d.asset]?.id ?? null,
+        latitude: tenant.origin[0] + d.offset[0],
+        longitude: tenant.origin[1] + d.offset[1],
+        expected_interval_seconds: 5,
+        config: { synthetic: true, firmware: 'sim-1.0' },
+      },
+      'device',
+    );
   }
 }
 
 // Synthetic reference documents for the AI knowledge base (only when the ai profile is running).
-const DOCUMENTS = [
+const FLOOD_DOCUMENTS = [
   {
     title: 'Flood response standard operating procedure',
     classification: 'internal',
@@ -308,14 +326,42 @@ const DOCUMENTS = [
   },
 ];
 
-async function seedDocuments(admin) {
-  const probe = await rawApi(admin, 'GET', '/api/ai/documents');
-  if (probe.status !== 200) {
+const INDUSTRIAL_DOCUMENTS = [
+  {
+    title: 'Machine vibration response procedure',
+    classification: 'internal',
+    allowed_roles: [],
+    source: 'synthetic demonstration document',
+    content: [
+      'Purpose. This procedure describes how production and maintenance respond to machine condition alarms. It is a synthetic document written for demonstration; the levels in it are examples, not engineering guidance.',
+      'Warning. When vibration velocity on a machining centre exceeds the warning level, an equipment incident is opened and a repair request is raised automatically. The production supervisor acknowledges the incident, decides whether the machine may keep running, and approves or rejects the repair request.',
+      'Critical. At the critical level the supervisor stops production on the machine. Stopping and restarting a machine is always done by a person at the machine; this platform does not control equipment.',
+      'Repair. The maintenance planner assigns the work order to a technician. The technician records what was found, the time spent and the condition of the machine afterwards.',
+      'Closing. The maintenance planner confirms the equipment is restored, which resolves the incident.',
+    ].join('\n\n'),
+  },
+  {
+    title: 'Facility service request guideline',
+    classification: 'internal',
+    allowed_roles: [],
+    source: 'synthetic demonstration document',
+    content: [
+      'Scope. This guideline explains how requests about buildings are handled. It is a synthetic document written for demonstration.',
+      'Raising a request. Any member of staff may raise a service request and say where the problem is and what kind of problem it is.',
+      'Review. The facility manager reviews each request within one working day. Requests estimated at 5000 or more also need budget approval from the tenant administrator.',
+      'Work. An approved request becomes a work order, which the facility manager assigns to a technician. The requester is told when the work is complete.',
+    ].join('\n\n'),
+  },
+];
+
+async function seedDocuments(admin, documents) {
+  const res = await rawApi(admin, 'GET', '/api/ai/documents');
+  if (res.status !== 200) {
     console.log('  (ai profile not running: reference documents skipped)');
     return;
   }
-  for (const doc of DOCUMENTS) {
-    if (probe.body.some((d) => d.title === doc.title)) continue;
+  for (const doc of documents) {
+    if (res.body.some((d) => d.title === doc.title)) continue;
     await api(admin, 'POST', '/api/ai/documents', doc);
     note(`reference document "${doc.title}"`);
   }
@@ -331,12 +377,20 @@ async function seedMemberships() {
     ['adam.admin', 'irene.commander', 'OPERATIONS', 'Incident commander'],
     ['brian.admin', 'vera.validator', 'PERMITS', 'Validation officer'],
     ['brian.admin', 'dana.duty', 'OPERATIONS', 'Duty officer'],
+    ['maya.admin', 'sam.supervisor', 'PRODUCTION', 'Production supervisor'],
+    ['maya.admin', 'paula.planner', 'MAINTENANCE', 'Maintenance planner'],
+    ['maya.admin', 'tim.technician', 'MAINTENANCE', 'Maintenance technician'],
+    ['maya.admin', 'tess.technician', 'MAINTENANCE', 'Maintenance technician'],
+    ['maya.admin', 'fred.facilities', 'FACILITIES', 'Facility manager'],
+    ['maya.admin', 'rita.requester', 'FINANCE', 'Accountant'],
   ];
-  const existing = { 'adam.admin': await api('adam.admin', 'GET', '/api/tenant/memberships'), 'brian.admin': await api('brian.admin', 'GET', '/api/tenant/memberships') };
-  const departments = {
-    'adam.admin': Object.fromEntries((await api('adam.admin', 'GET', '/api/tenant/departments')).map((d) => [d.code, d.id])),
-    'brian.admin': Object.fromEntries((await api('brian.admin', 'GET', '/api/tenant/departments')).map((d) => [d.code, d.id])),
-  };
+  const admins = [...new Set(people.map((p) => p[0]))];
+  const existing = {};
+  const departments = {};
+  for (const admin of admins) {
+    existing[admin] = await api(admin, 'GET', '/api/tenant/memberships');
+    departments[admin] = Object.fromEntries((await api(admin, 'GET', '/api/tenant/departments')).map((d) => [d.code, d.id]));
+  }
   for (const [admin, username, dept, title] of people) {
     if (existing[admin].some((m) => m.username === username)) continue;
     const userId = claimsOf(await tokenFor(username)).sub;
@@ -347,12 +401,15 @@ async function seedMemberships() {
 
 try {
   console.log('Seeding synthetic demonstration data through the API gateway...');
-  for (const [tenantId, site] of Object.entries(SITES)) await seedTenant(tenantId, site);
+  for (const [tenantId, tenant] of Object.entries(TENANTS)) await seedTenant(tenantId, tenant);
   await seedMemberships();
   console.log('\nAI knowledge base');
-  for (const site of Object.values(SITES)) await seedDocuments(site.admin);
+  await seedDocuments('adam.admin', FLOOD_DOCUMENTS);
+  await seedDocuments('brian.admin', FLOOD_DOCUMENTS);
+  await seedDocuments('maya.admin', INDUSTRIAL_DOCUMENTS);
   console.log(`\nSeed complete: ${created.length} record(s) created${created.length === 0 ? ' (everything already existed)' : ''}.`);
 } catch (err) {
   console.error(`\nSeed failed: ${err instanceof ApiError ? err.message : (err.stack ?? err)}`);
+  if (String(err?.message).includes('could not log in')) console.error('Hint: run `node scripts/identity-sync.mjs` to add the demo users this version introduced.');
   process.exit(1);
 }

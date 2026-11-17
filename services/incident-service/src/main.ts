@@ -1,12 +1,10 @@
 import { Controller, Get, HttpCode, Inject, Module, Param, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, type Principal, RequireRoles } from '@titan/authentication';
-import { Roles, STAFF_ROLES } from '@titan/contracts';
+import { INCIDENT_CLOSER_ROLES, INCIDENT_RESPONDER_ROLES, Roles, STAFF_ROLES } from '@titan/contracts';
 import { bootstrapService, PlatformModule, uuidParam, ZBody, ZQuery } from '@titan/platform';
 import type { z } from 'zod';
 import { AddNote, AssignIncident, CreateIncident, IncidentService, ListIncidents } from './incident.service.js';
-
-const RESPONDERS = [Roles.DutyOfficer, Roles.IncidentCommander];
 
 @ApiTags('incidents')
 @ApiBearerAuth()
@@ -16,7 +14,7 @@ class IncidentController {
   constructor(@Inject(IncidentService) private readonly incidents: IncidentService) {}
 
   @Get('incidents')
-  @ApiOperation({ summary: 'List incidents; status=active returns open and acknowledged incidents' })
+  @ApiOperation({ summary: 'List incidents; status=active returns open and acknowledged incidents; filter by category or asset' })
   list(@CurrentUser() user: Principal, @ZQuery(ListIncidents) query: z.infer<typeof ListIncidents>) {
     return this.incidents.list(user, query);
   }
@@ -26,9 +24,15 @@ class IncidentController {
     return this.incidents.summary(user);
   }
 
+  @Get('categories')
+  @ApiOperation({ summary: 'Incident categories of the tenant: response workflow, notified role and response targets' })
+  categories(@CurrentUser() user: Principal) {
+    return this.incidents.listCategories(user);
+  }
+
   @Post('incidents')
-  @RequireRoles(...RESPONDERS)
-  @ApiOperation({ summary: 'Report an incident manually' })
+  @RequireRoles(...INCIDENT_RESPONDER_ROLES)
+  @ApiOperation({ summary: 'Report an incident (manually, or from an inspection, work order, service request or external system)' })
   create(@CurrentUser() user: Principal, @ZBody(CreateIncident) body: z.infer<typeof CreateIncident>) {
     return this.incidents.create(user, body);
   }
@@ -41,20 +45,20 @@ class IncidentController {
 
   @Post('incidents/:id/assign')
   @HttpCode(200)
-  @RequireRoles(...RESPONDERS)
+  @RequireRoles(...INCIDENT_RESPONDER_ROLES)
   assign(@CurrentUser() user: Principal, @Param('id', uuidParam) id: string, @ZBody(AssignIncident) body: z.infer<typeof AssignIncident>) {
     return this.incidents.assign(user, id, body);
   }
 
   @Post('incidents/:id/notes')
-  @RequireRoles(...RESPONDERS, Roles.IotOperator)
+  @RequireRoles(...INCIDENT_RESPONDER_ROLES, Roles.IotOperator, Roles.MaintenanceTechnician)
   addNote(@CurrentUser() user: Principal, @Param('id', uuidParam) id: string, @ZBody(AddNote) body: z.infer<typeof AddNote>) {
     return this.incidents.addNote(user, id, body);
   }
 
   @Post('incidents/:id/close')
   @HttpCode(200)
-  @RequireRoles(Roles.IncidentCommander)
+  @RequireRoles(...INCIDENT_CLOSER_ROLES)
   @ApiOperation({ summary: 'Close a resolved incident' })
   close(@CurrentUser() user: Principal, @Param('id', uuidParam) id: string) {
     return this.incidents.close(user, id);
@@ -72,6 +76,6 @@ await bootstrapService({
   module: AppModule,
   title: 'TITAN incident-service',
   description:
-    'Incident lifecycle, severity, assignment and closure. Acknowledgment and resolution are applied from the incident-response workflow.',
+    'Incident lifecycle, categories, typed origins, severity, assignment and closure. Acknowledgment and resolution are applied from the response workflow of the incident\'s category.',
   migrations: new URL('../migrations', import.meta.url),
 });

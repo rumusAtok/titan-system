@@ -49,7 +49,7 @@
       },
       {
         "name": "asset_manager",
-        "description": "Maintains the infrastructure asset register"
+        "description": "Maintains the asset register"
       },
       {
         "name": "iot_operator",
@@ -66,6 +66,26 @@
       {
         "name": "tenant_admin",
         "description": "Administers one tenant (organisation)"
+      },
+      {
+        "name": "production_supervisor",
+        "description": "Acknowledges equipment incidents and approves maintenance requests"
+      },
+      {
+        "name": "maintenance_planner",
+        "description": "Plans and assigns maintenance work orders"
+      },
+      {
+        "name": "maintenance_technician",
+        "description": "Carries out and completes work orders"
+      },
+      {
+        "name": "facility_manager",
+        "description": "Manages facilities, service requests and facility incidents"
+      },
+      {
+        "name": "service_requester",
+        "description": "Raises service requests and follows their own"
       },
       {
         "name": "dr_operator",
@@ -744,6 +764,351 @@
         "iot_operator",
         "analyst",
         "auditor"
+      ]
+    },
+    {
+      "username": "maya.admin",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Maya",
+      "lastName": "Admin",
+      "email": "maya.admin@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "33333333-3333-4333-8333-333333333333"
+        ],
+        "department": [
+          "EXECUTIVE"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "tenant_admin",
+        "asset_manager",
+        "iot_operator",
+        "analyst",
+        "auditor"
+      ]
+    },
+    {
+      "username": "sam.supervisor",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Sam",
+      "lastName": "Supervisor",
+      "email": "sam.supervisor@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "33333333-3333-4333-8333-333333333333"
+        ],
+        "department": [
+          "PRODUCTION"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "production_supervisor"
+      ]
+    },
+    {
+      "username": "paula.planner",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Paula",
+      "lastName": "Planner",
+      "email": "paula.planner@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "33333333-3333-4333-8333-333333333333"
+        ],
+        "department": [
+          "MAINTENANCE"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "maintenance_planner"
+      ]
+    },
+    {
+      "username": "tim.technician",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Tim",
+      "lastName": "Technician",
+      "email": "tim.technician@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "33333333-3333-4333-8333-333333333333"
+        ],
+        "department": [
+          "MAINTENANCE"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "maintenance_technician"
+      ]
+    },
+    {
+      "username": "tess.technician",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Tess",
+      "lastName": "Technician",
+      "email": "tess.technician@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "33333333-3333-4333-8333-333333333333"
+        ],
+        "department": [
+          "MAINTENANCE"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "maintenance_technician"
+      ]
+    },
+    {
+      "username": "fred.facilities",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Fred",
+      "lastName": "Facilities",
+      "email": "fred.facilities@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "33333333-3333-4333-8333-333333333333"
+        ],
+        "department": [
+          "FACILITIES"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "facility_manager"
+      ]
+    },
+    {
+      "username": "rita.requester",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Rita",
+      "lastName": "Requester",
+      "email": "rita.requester@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "33333333-3333-4333-8333-333333333333"
+        ],
+        "department": [
+          "FINANCE"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "service_requester"
+      ]
+    },
+    {
+      "username": "ravi.requester",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Ravi",
+      "lastName": "Requester",
+      "email": "ravi.requester@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "33333333-3333-4333-8333-333333333333"
+        ],
+        "department": [
+          "FINANCE"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "service_requester"
+      ]
+    },
+    {
+      "username": "dora.admin",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Dora",
+      "lastName": "Admin",
+      "email": "dora.admin@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "44444444-4444-4444-8444-444444444444"
+        ],
+        "department": [
+          "EXECUTIVE"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "tenant_admin",
+        "asset_manager",
+        "iot_operator",
+        "facility_manager"
+      ]
+    },
+    {
+      "username": "pete.supervisor",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Pete",
+      "lastName": "Supervisor",
+      "email": "pete.supervisor@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "44444444-4444-4444-8444-444444444444"
+        ],
+        "department": [
+          "OPERATIONS"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "production_supervisor"
+      ]
+    },
+    {
+      "username": "penny.planner",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Penny",
+      "lastName": "Planner",
+      "email": "penny.planner@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "44444444-4444-4444-8444-444444444444"
+        ],
+        "department": [
+          "OPERATIONS"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "maintenance_planner"
+      ]
+    },
+    {
+      "username": "dan.technician",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Dan",
+      "lastName": "Technician",
+      "email": "dan.technician@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "44444444-4444-4444-8444-444444444444"
+        ],
+        "department": [
+          "OPERATIONS"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "maintenance_technician"
+      ]
+    },
+    {
+      "username": "daisy.requester",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Daisy",
+      "lastName": "Requester",
+      "email": "daisy.requester@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "44444444-4444-4444-8444-444444444444"
+        ],
+        "department": [
+          "OPERATIONS"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "service_requester"
       ]
     },
     {

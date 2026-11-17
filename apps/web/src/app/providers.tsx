@@ -5,6 +5,7 @@ import { type ReactNode, useState } from 'react';
 import { Shell } from '@/components/shell';
 import { ApiError } from '@/lib/api';
 import { AuthProvider } from '@/lib/auth';
+import { WorkspaceProvider } from '@/lib/workspace';
 
 export function Providers({ children }: { children: ReactNode }) {
   const [client] = useState(
@@ -23,7 +24,9 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <AuthProvider>
       <QueryClientProvider client={client}>
-        <Shell>{children}</Shell>
+        <WorkspaceProvider>
+          <Shell>{children}</Shell>
+        </WorkspaceProvider>
       </QueryClientProvider>
     </AuthProvider>
   );

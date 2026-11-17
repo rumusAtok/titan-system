@@ -1,6 +1,6 @@
 import { Inject, Injectable, type OnApplicationBootstrap, type OnApplicationShutdown } from '@nestjs/common';
 import { hasAnyRole, type Principal } from '@titan/authentication';
-import { type EventEnvelope, type EventPayload, Roles, STAFF_ROLES } from '@titan/contracts';
+import { canonicalJson, DEFAULT_INCIDENT_WORKFLOW, packActor, type EventEnvelope, type EventPayload, Roles, STAFF_ROLES, SUBJECT_TYPE_KEYS, type SubjectType, subjectTypeInfo } from '@titan/contracts';
 import { type Logger, newContext, runWithContext } from '@titan/observability';
 import { Db, DomainError, EventConsumers, LOGGER, Outbox, type Q } from '@titan/platform';
 import { z } from 'zod';
@@ -9,9 +9,24 @@ import { type Decision, Definition, dueDate, type Milestone, nextStage, plannedS
 export const CreateDefinition = z.object({
   key: z.string().regex(/^[a-z0-9][a-z0-9-]{1,62}$/),
   name: z.string().min(2).max(200),
-  subject_type: z.enum(['case', 'incident']),
+  /** Any type of the controlled subject registry. */
+  subject_type: z.enum(SUBJECT_TYPE_KEYS),
   definition: Definition,
 });
+
+/** A workflow definition as carried by a pack activation event. */
+const PackWorkflowTemplate = z.object({
+  key: z.string().regex(/^[a-z0-9][a-z0-9-]{1,62}$/),
+  name: z.string().min(2).max(200),
+  subject_type: z.enum(SUBJECT_TYPE_KEYS),
+  definition: Definition,
+});
+
+/** Two definitions are the same when they are equal after the schema's defaults are applied. */
+export function sameDefinition(stored: unknown, incoming: Definition): boolean {
+  const parsed = Definition.safeParse(stored);
+  return parsed.success && canonicalJson(parsed.data) === canonicalJson(incoming);
+}
 
 export const DecideTask = z.object({
   decision: z.enum(['approve', 'reject', 'return']),
@@ -22,6 +37,7 @@ export const ListTasks = z.object({
   scope: z.enum(['mine', 'all']).default('mine'),
   status: z.enum(['pending', 'completed', 'cancelled']).default('pending'),
   subject_id: z.uuid().optional(),
+  subject_type: z.enum(SUBJECT_TYPE_KEYS).optional(),
   limit: z.coerce.number().int().min(1).max(200).default(100),
 });
 
@@ -37,7 +53,7 @@ interface DefinitionRow {
   key: string;
   version: number;
   name: string;
-  subject_type: 'case' | 'incident';
+  subject_type: SubjectType;
   definition: unknown;
 }
 
@@ -47,7 +63,7 @@ interface InstanceRow {
   definition_id: string;
   definition_key: string;
   definition_version: number;
-  subject_type: 'case' | 'incident';
+  subject_type: SubjectType;
   subject_id: string;
   reference: string;
   title: string;
@@ -94,7 +110,6 @@ const DECISION_EVENT = {
   return: 'workflow.decision.returned.v1',
 } as const;
 
-const INCIDENT_WORKFLOW_KEY = 'incident-response';
 const SLA_SWEEP_MS = Number(process.env.SLA_SWEEP_MS ?? 30_000);
 
 @Injectable()
@@ -111,7 +126,16 @@ export class WorkflowService implements OnApplicationBootstrap, OnApplicationShu
 
   onApplicationBootstrap(): void {
     this.consumers.register({
-      subjects: ['case.submitted.v1', 'case.resubmitted.v1', 'case.cancelled.v1', 'incident.created.v1'],
+      subjects: [
+        'case.submitted.v1',
+        'case.resubmitted.v1',
+        'case.cancelled.v1',
+        'incident.created.v1',
+        // Generic contract for every other registered subject type.
+        'workflow.start.requested.v1',
+        'workflow.cancel.requested.v1',
+        'tenant.pack.activated.v1',
+      ],
       handler: (event, q) => this.onEvent(event, q),
     });
     this.sweepTimer = setInterval(() => void this.sweepSla(), SLA_SWEEP_MS);
@@ -128,7 +152,9 @@ export class WorkflowService implements OnApplicationBootstrap, OnApplicationShu
 
   listDefinitions(user: Principal) {
     return this.db.tx(user.tenantId, (q) =>
-      q.query('SELECT id, key, version, name, subject_type, definition, active, created_by, created_at FROM workflow_definitions ORDER BY key, version DESC'),
+      q.query(
+        'SELECT id, key, version, name, subject_type, definition, active, created_by, created_at, pack_id, pack_version FROM workflow_definitions ORDER BY key, version DESC',
+      ),
     );
   }
 
@@ -144,6 +170,11 @@ export class WorkflowService implements OnApplicationBootstrap, OnApplicationShu
         [user.tenantId, input.key, next, input.name, input.subject_type, JSON.stringify(input.definition), user.username],
       );
     });
+  }
+
+  /** The controlled registry of subject types a workflow can run on. */
+  listSubjectTypes() {
+    return this.db.tx(null, (q) => q.query('SELECT key, label, owner_service, supports_return FROM workflow_subject_types ORDER BY key'));
   }
 
   private async definitionOf(q: Q, instance: InstanceRow): Promise<Definition> {
@@ -237,6 +268,30 @@ export class WorkflowService implements OnApplicationBootstrap, OnApplicationShu
     });
   }
 
+  /** In-application notice to the person a request was raised by (cases notify their applicant externally instead). */
+  private async notifyRequester(q: Q, instance: InstanceRow, outcome: 'approved' | 'rejected' | 'cancelled'): Promise<void> {
+    if (instance.subject_type === 'case' || !instance.applicant_id || outcome === 'cancelled') return;
+    await this.outbox.emit(q, {
+      type: 'notification.requested.v1',
+      aggregateType: 'workflow_instance',
+      aggregateId: instance.id,
+      tenantId: instance.tenant_id,
+      payload: {
+        dedupe_key: `requester:${instance.id}:${outcome}`,
+        channel: 'in_app',
+        category: `workflow.request_${outcome}`,
+        external: false,
+        recipient_user_id: instance.applicant_id,
+        recipient_role: null,
+        recipient_address: null,
+        subject: `${instance.reference} ${outcome}`,
+        body: `"${instance.title}" was ${outcome}.`,
+        reference_type: instance.subject_type,
+        reference_id: instance.subject_id,
+      },
+    });
+  }
+
   private async cancelPendingTasks(q: Q, instance: InstanceRow): Promise<void> {
     const cancelled = await q.query<TaskRow>(
       `UPDATE workflow_tasks SET status = 'cancelled', closed_at = now() WHERE instance_id = $1 AND status = 'pending' RETURNING ${TASK_COLUMNS}`,
@@ -311,6 +366,7 @@ export class WorkflowService implements OnApplicationBootstrap, OnApplicationShu
         },
       });
     }
+    await this.notifyRequester(q, instance, outcome);
     if (outcome === 'approved') {
       await this.notifyApplicant(q, instance, definition, 'approved', `Your application "${instance.title}" (${instance.reference}) has been approved.`);
     } else if (outcome === 'rejected') {
@@ -322,7 +378,7 @@ export class WorkflowService implements OnApplicationBootstrap, OnApplicationShu
     q: Q,
     tenantId: string,
     def: DefinitionRow,
-    subject: { type: 'case' | 'incident'; id: string; reference: string; title: string; applicantId: string | null; applicantEmail: string | null },
+    subject: { type: SubjectType; id: string; reference: string; title: string; applicantId: string | null; applicantEmail: string | null },
     context: Record<string, unknown>,
   ): Promise<void> {
     const definition = Definition.parse(def.definition);
@@ -421,7 +477,7 @@ export class WorkflowService implements OnApplicationBootstrap, OnApplicationShu
       }
 
       const definition = await this.definitionOf(q, instance);
-      if (input.decision === 'return' && (!definition.allow_return || instance.subject_type !== 'case')) {
+      if (input.decision === 'return' && (!definition.allow_return || !subjectTypeInfo(instance.subject_type)?.supportsReturn)) {
         throw DomainError.conflict('return_not_allowed', 'this process does not allow returning for changes');
       }
       if (input.decision !== 'approve' && !input.comment) {
@@ -541,6 +597,10 @@ export class WorkflowService implements OnApplicationBootstrap, OnApplicationShu
       if (query.subject_id) {
         params.push(query.subject_id);
         where.push(`i.subject_id = $${params.length}`);
+      }
+      if (query.subject_type) {
+        params.push(query.subject_type);
+        where.push(`i.subject_type = $${params.length}`);
       }
       params.push(query.limit);
       return q.query(
@@ -715,12 +775,14 @@ export class WorkflowService implements OnApplicationBootstrap, OnApplicationShu
       }
       case 'incident.created.v1': {
         const p = event.payload as EventPayload<'incident.created.v1'>;
+        // The incident's category names its response process; incidents created before categories existed use the default.
+        const workflowKey = p.workflow_key ?? DEFAULT_INCIDENT_WORKFLOW;
         const def = await q.maybeOne<DefinitionRow>(
           `SELECT id, key, version, name, subject_type, definition FROM workflow_definitions WHERE key = $1 AND subject_type = 'incident' AND active`,
-          [INCIDENT_WORKFLOW_KEY],
+          [workflowKey],
         );
         if (!def) {
-          this.logger.warn({ tenant_id: event.tenant_id, incident_id: p.incident_id }, 'no incident-response workflow configured; incident has no response process');
+          this.logger.warn({ tenant_id: event.tenant_id, incident_id: p.incident_id, workflow_key: workflowKey }, 'no incident response workflow configured; incident has no response process');
           return;
         }
         await this.startInstance(
@@ -728,10 +790,67 @@ export class WorkflowService implements OnApplicationBootstrap, OnApplicationShu
           event.tenant_id,
           def,
           { type: 'incident', id: p.incident_id, reference: p.reference_no, title: p.title, applicantId: null, applicantEmail: null },
-          { severity: p.severity, source_type: p.source_type },
+          { severity: p.severity, source_type: p.source_type, category: p.category ?? 'general' },
         );
         return;
       }
+      case 'workflow.start.requested.v1': {
+        const p = event.payload as EventPayload<'workflow.start.requested.v1'>;
+        const def = await q.maybeOne<DefinitionRow>(
+          `SELECT id, key, version, name, subject_type, definition FROM workflow_definitions WHERE key = $1 AND subject_type = $2 AND active`,
+          [p.workflow_key, p.subject_type],
+        );
+        // As for cases: fail visibly (retry, then dead letter) instead of leaving the subject stalled without a process.
+        if (!def) throw new Error(`no active workflow definition '${p.workflow_key}' for subject type '${p.subject_type}' in tenant ${event.tenant_id}`);
+        await this.startInstance(
+          q,
+          event.tenant_id,
+          def,
+          { type: p.subject_type, id: p.subject_id, reference: p.reference, title: p.title, applicantId: p.requester_id, applicantEmail: null },
+          p.context,
+        );
+        return;
+      }
+      case 'workflow.cancel.requested.v1': {
+        const p = event.payload as EventPayload<'workflow.cancel.requested.v1'>;
+        const instance = await q.maybeOne<InstanceRow>(
+          `SELECT ${INSTANCE_COLUMNS} FROM workflow_instances WHERE subject_type = $1 AND subject_id = $2 FOR UPDATE`,
+          [p.subject_type, p.subject_id],
+        );
+        if (!instance || instance.status !== 'running') return;
+        await this.completeInstance(q, instance, await this.definitionOf(q, instance), 'cancelled', p.cancelled_by);
+        return;
+      }
+      case 'tenant.pack.activated.v1':
+        return this.installPackWorkflows(event.tenant_id, event.payload as EventPayload<'tenant.pack.activated.v1'>, q);
+    }
+  }
+
+  /**
+   * Installs the workflow definitions of an industry pack for one tenant.
+   * Idempotent: a definition whose content is already the active version is
+   * left alone. Changed content is published as a NEW version; instances
+   * that are running stay bound to the version they started with.
+   */
+  private async installPackWorkflows(tenantId: string, p: EventPayload<'tenant.pack.activated.v1'>, q: Q): Promise<void> {
+    for (const raw of p.install.workflows) {
+      const template = PackWorkflowTemplate.parse(raw);
+      const active = await q.maybeOne<{ id: string; name: string; subject_type: string; definition: unknown }>(
+        'SELECT id, name, subject_type, definition FROM workflow_definitions WHERE key = $1 AND active FOR UPDATE',
+        [template.key],
+      );
+      if (active && active.subject_type !== template.subject_type) {
+        throw new Error(`workflow '${template.key}' already exists for subject type '${active.subject_type}'; pack ${p.pack_id} defines it for '${template.subject_type}'`);
+      }
+      if (active && active.name === template.name && sameDefinition(active.definition, template.definition)) continue;
+      const { next } = await q.one<{ next: number }>('SELECT COALESCE(max(version), 0) + 1 AS next FROM workflow_definitions WHERE key = $1', [template.key]);
+      await q.exec('UPDATE workflow_definitions SET active = false WHERE key = $1 AND active', [template.key]);
+      await q.exec(
+        `INSERT INTO workflow_definitions (tenant_id, key, version, name, subject_type, definition, created_by, pack_id, pack_version)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [tenantId, template.key, next, template.name, template.subject_type, JSON.stringify(template.definition), packActor(p.pack_id, p.version), p.pack_id, p.version],
+      );
+      this.logger.info({ tenant_id: tenantId, workflow: template.key, version: next, pack: p.pack_id, pack_version: p.version }, 'workflow definition installed from pack');
     }
   }
 

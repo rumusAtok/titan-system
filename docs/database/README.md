@@ -8,16 +8,17 @@ moving a service to its own instance is a connection-string change.
 
 | Database | Owning service | Migration role | Runtime role | Notable tables |
 | --- | --- | --- | --- | --- |
-| `titan_tenant` | tenant-service | `tenant_owner` | `tenant_app` | tenants, tenant_config, departments, jurisdictions, memberships |
+| `titan_tenant` | tenant-service | `tenant_owner` | `tenant_app` | tenants, tenant_config, departments, jurisdictions, memberships, sites, pack_catalog (immutable), tenant_packs, tenant_pack_history (append-only), tenant_entitlement_revisions, dashboard_layouts |
 | `titan_case` | case-service | `case_owner` | `case_app` | form_definitions, cases, case_status_history, case_attachments |
-| `titan_workflow` | workflow-service | `workflow_owner` | `workflow_app` | workflow_definitions, workflow_instances, workflow_tasks, workflow_decisions, delegations |
+| `titan_workflow` | workflow-service | `workflow_owner` | `workflow_app` | workflow_subject_types (registry), workflow_definitions, workflow_instances, workflow_tasks, workflow_decisions, delegations |
 | `titan_notification` | notification-service | `notification_owner` | `notification_app` | notifications, notification_reads |
 | `titan_audit` | audit-service | `audit_owner` | `audit_app` | audit_events (append-only) |
-| `titan_asset` | asset-service | `asset_owner` | `asset_app` | asset_categories, assets, asset_status_history |
-| `titan_device` | device-service | `device_owner` | `device_app` | devices, sensors, device_status_history |
+| `titan_asset` | asset-service | `asset_owner` | `asset_app` | asset_categories, asset_attribute_schemas (versioned), assets, asset_status_history |
+| `titan_device` | device-service | `device_owner` | `device_app` | sensor_profiles, devices, sensors, device_status_history |
 | `titan_telemetry` | telemetry-service | `telemetry_owner` | `telemetry_app` | measurements (partitioned), latest_measurements, device_projection, rejected_messages |
-| `titan_alert` | alert-service | `alert_owner` | `alert_app` | alert_rules, alerts, device_names |
-| `titan_incident` | incident-service | `incident_owner` | `incident_app` | incidents, incident_timeline |
+| `titan_alert` | alert-service | `alert_owner` | `alert_app` | alert_rules (with incident category and owning pack), alerts, device_names |
+| `titan_incident` | incident-service | `incident_owner` | `incident_app` | incident_categories, incidents, incident_timeline |
+| `titan_maintenance` | maintenance-service (v3) | `maintenance_owner` | `maintenance_app` | request_types, maintenance_requests, work_orders, work_order_events, asset_projection, maintenance_counters |
 | `titan_pipeline` | data-pipeline-service | `pipeline_owner` | `pipeline_app` | bronze_events, pipeline_runs, dataset_catalog, lineage_edges, quality_results |
 | `titan_analytics` | analytics-service | `analytics_owner` | `analytics_app`, `analytics_ro` | kpi_* read models, dataset_loads |
 | `titan_ai` | ai-gateway-service | `ai_owner` | `ai_app` | reference_documents, document_chunks (pgvector), tool_executions, pending_actions, report_drafts |
@@ -29,7 +30,14 @@ Rules that make this ownership real:
   (tested: `asset_app` cannot connect to `titan_case`).
 - The **owner** role runs migrations and owns the tables. The **runtime** role has only DML and is
   subject to row-level security. Neither is a superuser or has `BYPASSRLS`.
-- Every Node service database also has the platform tables `outbox`, `inbox`, `dead_letters`.
+- Every Node service database also has the platform tables `outbox`, `inbox`, `dead_letters`
+  and, since v3, `tenant_entitlements` (the local projection of each tenant's capabilities).
+- A service added after an installation was first initialised gets its database from the
+  one-shot `postgres-ensure` container (`infrastructure/docker/postgres/ensure-databases.sh`),
+  which only creates what is missing.
+- v3 schema changes are forward-only migrations (`0002_*`). Two of them replace a CHECK
+  constraint: `workflow_*.subject_type` now references the subject registry, and
+  `incidents.source_type` accepts four more origins. Every existing row satisfies the new rule.
 - Data needed from another service is copied by events into a **local projection**
   (`device_projection` in telemetry, `device_names` in alerting), never joined across databases.
 

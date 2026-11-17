@@ -152,7 +152,7 @@ def write_silver(tmp: Path, events: list[dict]) -> None:
     changes, _ = transforms.extract_changes(numbered(events))
     silver = tmp / "silver"
     (silver / "measurements").mkdir(parents=True)
-    for name in ("cases", "workflow_tasks", "incidents", "devices", "assets"):
+    for name in transforms.ENTITIES:
         transforms.merge_latest(name, None, changes[name]).write_parquet(silver / f"{name}.parquet")
     transforms.merge_append("measurements", None, changes["measurements"]).write_parquet(silver / "measurements" / "date=x.parquet")
 
@@ -251,3 +251,133 @@ def test_gold_is_deterministic(tmp_path: Path):
     first = pl.read_parquet(tmp_path / "gold" / "approval_turnaround.parquet")
     build_gold(tmp_path / "silver", tmp_path / "gold", transforms.ts(NOW))
     assert first.equals(pl.read_parquet(tmp_path / "gold" / "approval_turnaround.parquet"))
+
+
+# --- TITAN v3: datasets shared by every industry -----------------------------------
+
+
+def maintenance_events(n: str, request_type: str, pack: str, repair_hours: float | None, outcome: str = "approved") -> list[dict]:
+    """One request, decided `outcome`; when approved a work order, completed after `repair_hours` if given."""
+    submitted = NOW - timedelta(hours=10)
+    events = [
+        event("maintenance.request.submitted.v1", {"request_id": f"r{n}", "reference_no": f"MR-{n}", "request_type": request_type, "pack_id": pack,
+                                                   "priority": "high", "origin_type": "manual", "submitted_at": iso(submitted)}),
+        event("maintenance.request.decided.v1", {"request_id": f"r{n}", "request_type": request_type, "pack_id": pack, "outcome": outcome,
+                                                 "decided_at": iso(submitted + timedelta(hours=1))}),
+    ]
+    if outcome != "approved":
+        return events
+    created = submitted + timedelta(hours=1)
+    events.append(event("maintenance.work_order.created.v1", {"work_order_id": f"w{n}", "reference_no": f"WO-{n}", "request_id": f"r{n}", "request_type": request_type,
+                                                              "pack_id": pack, "priority": "high", "origin_type": "manual", "created_at": iso(created)}))
+    if repair_hours is not None:
+        started = created + timedelta(hours=1)
+        events += [
+            event("maintenance.work_order.assigned.v1", {"work_order_id": f"w{n}", "assignee_id": "u1"}),
+            event("maintenance.work_order.started.v1", {"work_order_id": f"w{n}", "started_at": iso(started)}),
+            event("maintenance.work_order.completed.v1", {"work_order_id": f"w{n}", "request_type": request_type, "pack_id": pack, "started_at": iso(started),
+                                                          "completed_at": iso(started + timedelta(hours=repair_hours)), "labor_hours": repair_hours, "condition_after": "good"}),
+        ]
+    return events
+
+
+def test_work_order_status_follows_its_events():
+    changes, malformed = transforms.extract_changes(numbered(maintenance_events("1", "equipment-repair", "manufacturing", 2.0)))
+    assert malformed == 0
+    order = transforms.merge_latest("work_orders", None, changes["work_orders"]).to_dicts()[0]
+    assert order["status"] == "completed" and order["pack_id"] == "manufacturing" and order["labor_hours"] == 2.0
+    request = transforms.merge_latest("maintenance_requests", None, changes["maintenance_requests"]).to_dicts()[0]
+    assert request["status"] == "approved" and request["request_type"] == "equipment-repair"
+    valid, results = transforms.validate("work_orders", transforms.merge_latest("work_orders", None, changes["work_orders"]), NOW)
+    assert valid.height == 1 and all(r.passed for r in results)
+
+
+def test_maintenance_gold_keeps_industries_apart(tmp_path: Path):
+    events = [
+        *maintenance_events("1", "equipment-repair", "manufacturing", 2.0),
+        *maintenance_events("2", "equipment-repair", "manufacturing", 4.0),
+        *maintenance_events("3", "equipment-repair", "manufacturing", None),  # approved, work order still open
+        *maintenance_events("4", "facility-service-request", "facilities", 1.0),
+        *maintenance_events("5", "facility-service-request", "facilities", None, "rejected"),
+    ]
+    write_silver(tmp_path, events)
+    build_gold(tmp_path / "silver", tmp_path / "gold", transforms.ts(NOW))
+
+    def gold(name: str) -> list[dict]:
+        return pl.read_parquet(tmp_path / "gold" / f"{name}.parquet").to_dicts()
+
+    orders = {(r["pack_id"], r["status"]): r for r in gold("maintenance_work_orders")}
+    assert orders[("manufacturing", "completed")]["work_orders"] == 2 and orders[("manufacturing", "completed")]["open"] is False
+    assert orders[("manufacturing", "open")]["work_orders"] == 1 and orders[("manufacturing", "open")]["open"] is True
+    assert orders[("facilities", "completed")]["work_orders"] == 1
+    assert ("facilities", "open") not in orders
+
+    requests = {(r["pack_id"], r["status"]): r["requests"] for r in gold("maintenance_requests")}
+    assert requests == {("manufacturing", "approved"): 3, ("facilities", "approved"): 1, ("facilities", "rejected"): 1}
+
+    turnaround = {r["pack_id"]: r for r in gold("work_order_turnaround")}
+    assert turnaround["manufacturing"]["completed"] == 2
+    assert turnaround["manufacturing"]["avg_repair_hours"] == 3.0  # (2 + 4) / 2
+    assert turnaround["manufacturing"]["avg_request_to_completion_hours"] == 5.0  # 1 h approval + 1 h wait + repair
+    assert turnaround["facilities"]["completed"] == 1 and turnaround["facilities"]["avg_repair_hours"] == 1.0
+
+
+def test_metric_trend_covers_every_sensor_kind(tmp_path: Path):
+    def reading(i: int, kind: str, unit: str, value: float, device: str) -> dict:
+        at = NOW - timedelta(minutes=i)
+        return event("telemetry.measurement.accepted.v1", reading_payload(f"{device}-{kind}-{i}", device_id=device, sensor_kind=kind, unit=unit, value=value, observed_at=iso(at), received_at=iso(at)))
+
+    events = [
+        event("device.registered.v1", {"device_id": "m1", "serial_no": "M1", "name": "CNC 1 monitor", "device_type": "machine-condition-monitor", "expected_interval_seconds": 5}),
+        event("device.registered.v1", {"device_id": "g1", "serial_no": "G1", "name": "River gauge", "device_type": "flood-monitoring-station", "expected_interval_seconds": 5}),
+        *[reading(i, "vibration_rms", "mm/s", 3.0 + i * 0.1, "m1") for i in range(1, 4)],
+        *[reading(i, "bearing_temperature", "degC", 60.0, "m1") for i in range(1, 4)],
+        *[reading(i, "water_level", "m", 2.0, "g1") for i in range(1, 4)],
+        # Flagged by telemetry-service: stored, but never part of a trend.
+        event("telemetry.measurement.accepted.v1", reading_payload("bad", device_id="m1", sensor_kind="vibration_rms", unit="mm/s", value=400.0, quality="out_of_range", observed_at=iso(NOW), received_at=iso(NOW))),
+    ]
+    write_silver(tmp_path, events)
+    build_gold(tmp_path / "silver", tmp_path / "gold", transforms.ts(NOW))
+    trend = pl.read_parquet(tmp_path / "gold" / "metric_trend.parquet")
+    summary = trend.group_by("sensor_kind").agg(pl.col("samples").sum(), pl.col("max_value").max(), pl.col("unit").first(), pl.col("device_name").first())
+    by_kind = {row["sensor_kind"]: row for row in summary.to_dicts()}
+    assert by_kind["vibration_rms"]["samples"] == 3 and by_kind["vibration_rms"]["max_value"] < 4.0, "the out_of_range reading is excluded"
+    assert by_kind["vibration_rms"]["unit"] == "mm/s" and by_kind["vibration_rms"]["device_name"] == "CNC 1 monitor"
+    assert by_kind["bearing_temperature"]["samples"] == 3 and by_kind["water_level"]["samples"] == 3
+    # The original flood dataset is unchanged by the generic one: water level only.
+    water = pl.read_parquet(tmp_path / "gold" / "water_level_trend.parquet")
+    assert set(water["device_id"].to_list()) == {"g1"}
+
+
+def test_incidents_by_category_defaults_to_general(tmp_path: Path):
+    events = [
+        event("incident.created.v1", {"incident_id": "i1", "severity": "warning", "category": "equipment", "created_at": iso(NOW)}),
+        event("incident.created.v1", {"incident_id": "i2", "severity": "warning", "category": "equipment", "created_at": iso(NOW)}),
+        # An incident recorded before categories existed.
+        event("incident.created.v1", {"incident_id": "i3", "severity": "critical", "created_at": iso(NOW)}),
+    ]
+    write_silver(tmp_path, events)
+    build_gold(tmp_path / "silver", tmp_path / "gold", transforms.ts(NOW))
+    rows = {(r["category"], r["severity"]): r["incidents"] for r in pl.read_parquet(tmp_path / "gold" / "incidents_by_category.parquet").to_dicts()}
+    assert rows == {("equipment", "warning"): 2, ("general", "critical"): 1}
+
+
+def test_silver_written_by_an_earlier_version_is_upgraded_in_place(tmp_path: Path):
+    """A stored incidents table without the columns added in v3 still merges and still feeds gold."""
+    old_schema = {k: v for k, v in transforms.SCHEMAS["incidents"].items() if k not in ("category", "asset_id")}
+    old = pl.DataFrame([{"incident_id": "old1", "tenant_id": T, "severity": "critical", "created_at": transforms.ts(NOW), "_seq": 1}], schema=old_schema, orient="row")
+
+    changes, _ = transforms.extract_changes(numbered([event("incident.created.v1", {"incident_id": "new1", "severity": "warning", "category": "facility", "created_at": iso(NOW)})], start=2))
+    merged = transforms.merge_latest("incidents", old, changes["incidents"])
+    assert merged.columns == list(transforms.SCHEMAS["incidents"])
+    rows = {r["incident_id"]: r for r in merged.to_dicts()}
+    assert rows["old1"]["category"] is None and rows["old1"]["severity"] == "critical", "the old row is kept, the new column is empty"
+    assert rows["new1"]["category"] == "facility"
+
+    # Gold reads a silver directory in which the incidents file has not been rewritten yet.
+    write_silver(tmp_path, [])
+    old.write_parquet(tmp_path / "silver" / "incidents.parquet")
+    build_gold(tmp_path / "silver", tmp_path / "gold", transforms.ts(NOW))
+    by_category = pl.read_parquet(tmp_path / "gold" / "incidents_by_category.parquet").to_dicts()
+    assert [(r["category"], r["incidents"]) for r in by_category] == [("general", 1)]
+    assert pl.read_parquet(tmp_path / "gold" / "incidents_by_severity.parquet").height == 1

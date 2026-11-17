@@ -68,6 +68,8 @@ const STATUS_TONE: Record<string, Tone> = {
   planned: 'neutral', under_maintenance: 'warn', retired: 'neutral', good: 'ok', fair: 'info', poor: 'warn',
   ok: 'ok', degraded: 'warn', unavailable: 'danger', unreachable: 'danger', sent: 'ok', failed: 'danger',
   succeeded: 'ok', executed: 'ok', expired: 'neutral',
+  // work orders
+  assigned: 'info', in_progress: 'warn',
 };
 
 /** Status shown as text plus colour, never colour alone. */

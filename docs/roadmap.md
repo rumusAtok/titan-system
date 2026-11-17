@@ -39,11 +39,21 @@ In suggested order; each follows the same pattern (own database, RLS, outbox, ro
 | --- | --- |
 | document-service | Attachments on cases and incidents in object storage, virus-scan hook, retention classes |
 | report-service | Scheduled PDF and spreadsheet reports from the analytical read models |
-| maintenance-service | Work orders raised from alarms and inspections, linked to assets |
+| maintenance-service (minimum slice done in v3) | Preventive schedules from asset maintenance dates, spare parts, labour costing, inspection plans [P12] |
 | geospatial-service | Spatial queries (PostGIS), catchments and zones, a configurable base map |
 | integration-service | Inbound and outbound adapters with an anti-corruption layer; the real e-mail adapter belongs here and needs authorisation before it sends anything |
 | procurement-service | Requisition to award on the workflow engine |
 | video-service | Camera registry and event markers; no analytics until privacy rules are agreed |
+
+## 4b. Industry platform (after v3)
+
+| Item | Outcome |
+| --- | --- |
+| Pack authoring and review | Packs proposed as data, reviewed and signed before entering the catalogue; still no code |
+| Role provisioning and site-scoped authorization [P11] | Packs create Keycloak roles; permissions limited to plants, buildings or lines |
+| Event-fed entitlements in the Python services [S13] | Same freshness as the Node services |
+| Per-service installation status in the pack view [R13] | An administrator sees when every owner has installed a pack |
+| More packs on the same capabilities | Utilities, healthcare facilities, logistics yards, education campuses: configuration, plus a new service only where behaviour demands it (inventory, procurement, inspection planning) |
 
 ## 5. Product depth
 

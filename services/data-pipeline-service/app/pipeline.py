@@ -35,7 +35,9 @@ OWNERS = {
     "workflow_tasks": ("workflow-service", "One row per workflow task with its current status"),
     "incidents": ("incident-service", "One row per incident with acknowledgment and resolution times"),
     "devices": ("device-service", "One row per IoT device with its current status"),
-    "assets": ("asset-service", "One row per infrastructure asset with lifecycle and maintenance state"),
+    "assets": ("asset-service", "One row per asset with lifecycle and maintenance state"),
+    "maintenance_requests": ("maintenance-service", "One row per maintenance or service request with its approval outcome"),
+    "work_orders": ("maintenance-service", "One row per work order with its status, start and completion times"),
     "measurements": ("telemetry-service", "Accepted sensor readings with quality flags, partitioned by day"),
 }
 
@@ -73,7 +75,7 @@ class PipelineRunner:
 
     def ensure_layout(self) -> None:
         """Creates empty, correctly typed silver files so gold queries work before any data exists."""
-        for name in ("cases", "workflow_tasks", "incidents", "devices", "assets"):
+        for name in transforms.ENTITIES:
             path = self.silver_dir / f"{name}.parquet"
             if not path.exists():
                 _write_atomic(transforms.frame(name, []), path)
@@ -133,7 +135,7 @@ class PipelineRunner:
         written: dict[str, int] = {}
         quality: list[transforms.QualityResult] = [transforms.QualityResult("bronze_events", "event_maps_to_schema", malformed == 0, malformed, len(events))]
 
-        for name in ("cases", "workflow_tasks", "incidents", "devices", "assets"):
+        for name in transforms.ENTITIES:
             path = self.silver_dir / f"{name}.parquet"
             merged = transforms.merge_latest(name, _read(path), changes[name])
             valid, results = transforms.validate(name, merged, now)

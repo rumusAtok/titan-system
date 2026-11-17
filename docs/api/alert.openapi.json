@@ -140,6 +140,12 @@
                     "default": true,
                     "type": "boolean"
                   },
+                  "incident_category": {
+                    "default": null,
+                    "nullable": true,
+                    "pattern": "^[a-z][a-z0-9-]{1,62}$",
+                    "type": "string"
+                  },
                   "name": {
                     "maxLength": 200,
                     "minLength": 2,
@@ -223,6 +229,11 @@
                     "maximum": 9007199254740991,
                     "minimum": 0,
                     "type": "integer"
+                  },
+                  "incident_category": {
+                    "nullable": true,
+                    "pattern": "^[a-z][a-z0-9-]{1,62}$",
+                    "type": "string"
                   },
                   "name": {
                     "maxLength": 200,

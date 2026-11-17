@@ -108,6 +108,13 @@
                     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
                     "type": "string"
                   },
+                  "site_id": {
+                    "default": null,
+                    "format": "uuid",
+                    "nullable": true,
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "type": "string"
+                  },
                   "status": {
                     "default": "planned",
                     "enum": [
@@ -381,6 +388,11 @@
                     "pattern": "^[A-Z0-9_]{2,32}$",
                     "type": "string"
                   },
+                  "description": {
+                    "default": "",
+                    "maxLength": 500,
+                    "type": "string"
+                  },
                   "name": {
                     "maxLength": 200,
                     "minLength": 2,
@@ -407,6 +419,127 @@
             "bearer": []
           }
         ],
+        "tags": [
+          "assets"
+        ]
+      }
+    },
+    "/categories/{code}/attribute-schemas": {
+      "get": {
+        "operationId": "AssetController_listSchemas",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Attribute schema versions of a category, with the number of assets on each",
+        "tags": [
+          "assets"
+        ]
+      },
+      "post": {
+        "operationId": "AssetController_publishSchema",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "fields": {
+                    "items": {
+                      "properties": {
+                        "help": {
+                          "maxLength": 500,
+                          "type": "string"
+                        },
+                        "label": {
+                          "maxLength": 200,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "max": {
+                          "type": "number"
+                        },
+                        "max_length": {
+                          "exclusiveMinimum": true,
+                          "maximum": 10000,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "min": {
+                          "type": "number"
+                        },
+                        "name": {
+                          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+                          "type": "string"
+                        },
+                        "options": {
+                          "items": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "minItems": 1,
+                          "type": "array"
+                        },
+                        "required": {
+                          "default": false,
+                          "type": "boolean"
+                        },
+                        "type": {
+                          "enum": [
+                            "text",
+                            "textarea",
+                            "number",
+                            "date",
+                            "select",
+                            "boolean",
+                            "email"
+                          ],
+                          "type": "string"
+                        },
+                        "unit": {
+                          "maxLength": 16,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "label",
+                        "type"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 100,
+                    "minItems": 1,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "fields"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Publish the next attribute schema version of a category; it applies to assets created or edited afterwards",
         "tags": [
           "assets"
         ]

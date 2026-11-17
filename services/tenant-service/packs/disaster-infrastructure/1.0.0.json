@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "id": "disaster-infrastructure",
+  "version": "1.0.0",
+  "name": "Disaster and infrastructure management",
+  "industry": "Disaster management and public infrastructure",
+  "description": "Flood monitoring: river level, rainfall and battery telemetry from monitoring stations, threshold alarms with hysteresis, automatic flood incidents and the map of flood defence assets. All sensor data in this repository is synthetic.",
+  "requires": { "capabilities": ["iot"], "packs": [{ "id": "platform-core" }] },
+  "roles": [
+    { "role": "iot_operator", "name": "IoT operator", "description": "Manages monitoring stations, alert rules and telemetry", "permissions": ["devices.manage", "alerts.manage", "telemetry.read"] },
+    { "role": "duty_officer", "name": "Duty officer", "description": "Acknowledges flood incidents", "permissions": ["incidents.acknowledge"] },
+    { "role": "incident_commander", "name": "Incident commander", "description": "Directs flood response and resolves incidents", "permissions": ["incidents.resolve", "incidents.close"] }
+  ],
+  "navigation": [
+    { "key": "executive-dashboard", "label": "Executive dashboard", "href": "/", "icon": "gauge", "audience": "staff", "order": 100 },
+    { "key": "iot-operations", "label": "IoT operations", "href": "/iot/", "icon": "activity", "audience": "staff", "order": 200 },
+    { "key": "gis-operations", "label": "GIS operations", "href": "/gis/", "icon": "map", "audience": "staff", "order": 210 }
+  ],
+  "asset_categories": [
+    { "code": "PUMP_STATION", "name": "Pump station" },
+    { "code": "FLOOD_GATE", "name": "Flood gate" },
+    { "code": "DRAINAGE", "name": "Drainage channel" },
+    { "code": "RIVER_GAUGE", "name": "River gauging site" }
+  ],
+  "sensor_profiles": [
+    {
+      "key": "flood-monitoring-station",
+      "name": "Flood monitoring station",
+      "device_type": "flood-monitoring-station",
+      "expected_interval_seconds": 5,
+      "sensors": [
+        { "kind": "water_level", "label": "Water level", "unit": "m", "min_valid": 0, "max_valid": 15 },
+        { "kind": "rainfall", "label": "Rainfall intensity", "unit": "mm/h", "min_valid": 0, "max_valid": 500 },
+        { "kind": "battery", "label": "Battery voltage", "unit": "V", "min_valid": 0, "max_valid": 15 }
+      ]
+    }
+  ],
+  "alert_rules": [
+    { "name": "High water level", "sensor_kind": "water_level", "operator": "gt", "threshold": { "$config": "warning_level_m" }, "clear_threshold": { "$config": "warning_clear_level_m" }, "severity": "warning", "create_incident": true, "incident_category": "flood" },
+    { "name": "Critical water level", "sensor_kind": "water_level", "operator": "gt", "threshold": { "$config": "critical_level_m" }, "clear_threshold": { "$config": "critical_clear_level_m" }, "severity": "critical", "create_incident": true, "incident_category": "flood" },
+    { "name": "Heavy rainfall", "sensor_kind": "rainfall", "operator": "gte", "threshold": 50, "clear_threshold": 40, "severity": "warning", "create_incident": false },
+    { "name": "Low sensor battery", "sensor_kind": "battery", "operator": "lt", "threshold": 11, "clear_threshold": 11.5, "severity": "info", "create_incident": false }
+  ],
+  "incident_categories": [
+    { "key": "flood", "name": "Flood", "description": "Raised from water-level alarms", "workflow_key": "incident-response", "notify_role": "duty_officer", "response_targets": { "critical": 15, "warning": 15 } }
+  ],
+  "dashboards": [
+    {
+      "key": "flood-monitoring",
+      "title": "Flood monitoring",
+      "description": "Water levels and monitoring-station health (synthetic data).",
+      "widgets": [
+        { "id": "flood-incidents-open", "title": "Flood incidents not yet acknowledged", "type": "stat", "dataset": "incidents_by_category", "filters": { "category": "flood", "status": "open" }, "value": { "column": "incidents", "agg": "sum" } },
+        { "id": "stations-availability", "title": "Station availability, last hour", "type": "stat", "dataset": "sensor_availability", "value": { "column": "availability_pct", "agg": "avg" }, "unit": "%" },
+        { "id": "water-level-trend", "title": "Water-level trend, 5-minute averages", "type": "timeseries", "dataset": "water_level_trend", "x": "bucket", "y": "avg_level", "series": "device_name", "unit": "m", "span": 2 },
+        {
+          "id": "stations",
+          "title": "Monitoring stations",
+          "type": "table",
+          "dataset": "sensor_availability",
+          "span": 2,
+          "columns": [
+            { "column": "name", "label": "Station" },
+            { "column": "status", "label": "Status" },
+            { "column": "availability_pct", "label": "Availability (%)" },
+            { "column": "last_observed_at", "label": "Last reading" }
+          ]
+        }
+      ]
+    }
+  ],
+  "query_templates": ["water_level_peaks", "sensors_below_availability"],
+  "ai_tools": ["water_levels"],
+  "config_schema": [
+    { "name": "warning_level_m", "label": "Warning water level", "type": "number", "required": true, "min": 0, "max": 15, "unit": "m" },
+    { "name": "warning_clear_level_m", "label": "Warning clears below", "type": "number", "required": true, "min": 0, "max": 15, "unit": "m" },
+    { "name": "critical_level_m", "label": "Critical water level", "type": "number", "required": true, "min": 0, "max": 15, "unit": "m" },
+    { "name": "critical_clear_level_m", "label": "Critical clears below", "type": "number", "required": true, "min": 0, "max": 15, "unit": "m" }
+  ],
+  "config_defaults": { "warning_level_m": 3.5, "warning_clear_level_m": 3.2, "critical_level_m": 4.5, "critical_clear_level_m": 4.2 },
+  "lifecycle": { "upgrades_from": [], "changes": ["Initial version: the flood-monitoring functionality of TITAN v2 as a pack"] }
+}

@@ -6,16 +6,22 @@ Status: **Implemented** = code, migrations, API, authorization and tests exist a
 **Not started** = service boundary defined, no code. No service is partially implemented behind
 placeholder responses.
 
+Since TITAN v3 the incident, device, telemetry and alert services also consume
+`tenant.pack.activated.v1` (pack templates), and every Node service consumes
+`tenant.entitlements.changed.v1` into its own entitlement projection. Capability per service:
+`case_management` (case-service), `iot` (device, telemetry, alert), `maintenance`
+(maintenance-service); see [industry packs](industry-packs.md).
+
 | # | Service | Responsibility | Status | Runtime | Database | Publishes | Consumes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | tenant-service | Organisations, departments, jurisdictions, tenant configuration, memberships | Implemented | NestJS | `titan_tenant` | `tenant.*` | — |
+| 1 | tenant-service | Organisations, sites, departments, jurisdictions, memberships; **industry-pack registry, activation, entitlements, workspace navigation and dashboards** | Implemented | NestJS | `titan_tenant` | `tenant.*` incl. `tenant.pack.*`, `tenant.entitlements.changed` | — |
 | 2 | case-service | Forms, case records, submissions, lifecycle, attachments, applicant tracking | Implemented | NestJS | `titan_case` | `case.*` | `workflow.task.assigned`, `workflow.case.*` |
-| 3 | workflow-service | Versioned processes, tasks, decisions, delegations, SLAs, escalation | Implemented | NestJS | `titan_workflow` | `workflow.*`, `notification.requested` | `case.*`, `incident.created` |
+| 3 | workflow-service | Versioned processes, tasks, decisions, delegations, SLAs, escalation | Implemented | NestJS | `titan_workflow` | `workflow.*`, `notification.requested` | `case.*`, `incident.created`, `workflow.start/cancel.requested`, `tenant.pack.activated` |
 | 4 | document-service | Attachments, versions, secure download, retention | **Not started** (attachments are stored by case-service, max 2 MB) | — | — | — | — |
 | 5 | notification-service | In-app notifications, e-mail adapter, delivery status, retry | Implemented (log adapter; no real mail) | NestJS | `titan_notification` | `notification.delivered/failed` | `notification.requested` |
 | 6 | audit-service | Append-only business and security records | Implemented | NestJS | `titan_audit` | — | all except telemetry |
-| 7 | asset-service | Assets, categories, hierarchy, lifecycle, maintenance state | Implemented | NestJS | `titan_asset` | `asset.*` | — |
-| 8 | maintenance-service | Work orders, inspections, schedules, technicians | **Not started** (asset-service holds condition and due dates) | — | — | — | — |
+| 7 | asset-service | Assets, categories with versioned attribute schemas, hierarchy, sites, lifecycle, maintenance state | Implemented | NestJS | `titan_asset` | `asset.*` | `tenant.pack.activated`, `maintenance.work_order.started/completed/cancelled` |
+| 8 | maintenance-service | Request types, maintenance and service requests, approval outcome, work orders (assign, start, complete, cancel). **Minimum slice**: no schedules, spare parts or inspection plans | Implemented (v3) | NestJS | `titan_maintenance` | `maintenance.*`, `workflow.start/cancel.requested`, `notification.requested` | `tenant.pack.activated`, `incident.created`, `workflow.instance.completed`, `asset.created/status_changed` |
 | 9 | procurement-service | Inventory, suppliers, requisitions, stock | **Not started** | — | — | — | — |
 | 10 | incident-service | Incident lifecycle, severity, assignment, timeline | Implemented | NestJS | `titan_incident` | `incident.*`, `notification.requested` | `alert.*`, `workflow.task.assigned`, `workflow.stage.completed` |
 | 11 | device-service | Device registry, sensors, status, configuration, offline detection | Implemented | NestJS | `titan_device` | `device.*` | `telemetry.device.heartbeat` |

@@ -15,6 +15,12 @@ export const SeriesQuery = z.object({
   bucket_seconds: z.coerce.number().int().min(1).max(86_400).default(60),
 });
 
+export const LatestQuery = z.object({
+  /** One sensor kind, or several separated by commas. */
+  sensor_kind: z.string().regex(/^[a-z0-9_,\s]{1,200}$/).optional(),
+  device_id: z.uuid().optional(),
+});
+
 export const MeasurementsQuery = z.object({
   device_id: z.uuid(),
   sensor_kind: z.string().min(1).max(32).optional(),
@@ -297,12 +303,15 @@ export class TelemetryService implements OnApplicationBootstrap, OnApplicationSh
   // Queries
   // ---------------------------------------------------------------------------
 
-  latest(user: Principal) {
+  latest(user: Principal, query: z.infer<typeof LatestQuery> = {}) {
+    const kinds = query.sensor_kind ? query.sensor_kind.split(',').map((k) => k.trim()).filter(Boolean) : null;
     return this.db.tx(user.tenantId, (q) =>
       q.query(
         `SELECT l.device_id, d.name AS device_name, d.serial_no, l.sensor_kind, l.value, l.unit, l.quality, l.observed_at, l.received_at
            FROM latest_measurements l JOIN device_projection d ON d.device_id = l.device_id
+          WHERE ($1::text[] IS NULL OR l.sensor_kind = ANY($1)) AND ($2::uuid IS NULL OR l.device_id = $2)
           ORDER BY d.name, l.sensor_kind`,
+        [kinds, query.device_id ?? null],
       ),
     );
   }

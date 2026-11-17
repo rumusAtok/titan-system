@@ -61,7 +61,6 @@
                     "type": "string"
                   },
                   "expected_interval_seconds": {
-                    "default": 30,
                     "maximum": 86400,
                     "minimum": 1,
                     "type": "integer"
@@ -85,7 +84,12 @@
                     "minLength": 2,
                     "type": "string"
                   },
+                  "profile_key": {
+                    "pattern": "^[a-z][a-z0-9-]{1,62}$",
+                    "type": "string"
+                  },
                   "sensors": {
+                    "default": [],
                     "items": {
                       "properties": {
                         "kind": {
@@ -115,7 +119,6 @@
                       "type": "object"
                     },
                     "maxItems": 32,
-                    "minItems": 1,
                     "type": "array"
                   },
                   "serial_no": {
@@ -126,9 +129,7 @@
                 },
                 "required": [
                   "serial_no",
-                  "name",
-                  "device_type",
-                  "sensors"
+                  "name"
                 ],
                 "type": "object"
               }
@@ -146,7 +147,7 @@
             "bearer": []
           }
         ],
-        "summary": "Register an IoT device and its sensors",
+        "summary": "Register a device from a sensor profile, or with an explicit device type and sensors",
         "tags": [
           "devices"
         ]
@@ -242,6 +243,140 @@
         "parameters": [],
         "responses": {
           "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "devices"
+        ]
+      }
+    },
+    "/metric-types": {
+      "get": {
+        "operationId": "DeviceController_metricTypes",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Every metric kind and unit the tenant has registered, from profiles and devices",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
+    "/sensor-profiles": {
+      "get": {
+        "operationId": "DeviceController_listProfiles",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Sensor profiles: kinds of device and the metrics (kind, unit, plausible range) each reports",
+        "tags": [
+          "devices"
+        ]
+      },
+      "post": {
+        "operationId": "DeviceController_createProfile",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "device_type": {
+                    "maxLength": 64,
+                    "minLength": 2,
+                    "type": "string"
+                  },
+                  "expected_interval_seconds": {
+                    "default": 30,
+                    "maximum": 86400,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "key": {
+                    "pattern": "^[a-z][a-z0-9-]{1,62}$",
+                    "type": "string"
+                  },
+                  "name": {
+                    "maxLength": 200,
+                    "minLength": 2,
+                    "type": "string"
+                  },
+                  "sensors": {
+                    "items": {
+                      "properties": {
+                        "kind": {
+                          "pattern": "^[a-z][a-z0-9_]{1,31}$",
+                          "type": "string"
+                        },
+                        "label": {
+                          "maxLength": 100,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "max_valid": {
+                          "default": null,
+                          "nullable": true,
+                          "type": "number"
+                        },
+                        "min_valid": {
+                          "default": null,
+                          "nullable": true,
+                          "type": "number"
+                        },
+                        "unit": {
+                          "maxLength": 16,
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "label",
+                        "unit"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 32,
+                    "minItems": 1,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "key",
+                  "name",
+                  "device_type",
+                  "sensors"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
             "description": ""
           }
         },

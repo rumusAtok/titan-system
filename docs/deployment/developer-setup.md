@@ -32,8 +32,17 @@ take about a minute and a half. Then open http://localhost:3000 and sign in.
 | `adam.admin` | Everything in the Riverbend tenant, administration, audit |
 | `brian.admin` | The second tenant (Northfield): none of Riverbend's data |
 | `pat.platform` | Disaster-recovery dashboard as a DR operator |
+| `maya.admin` | Meridian Industrial Group: manufacturing **and** facilities packs in one tenant, workspace selector, Administration › Industry packs |
+| `sam.supervisor`, `paula.planner`, `tim.technician` | Equipment incidents, repair approval, work orders (manufacturing) |
+| `fred.facilities`, `rita.requester` | Facility service requests: the facility manager and an occupant |
+| `dora.admin` | Harbourline Properties: facilities only, no device capability |
 
 Password for all of them: `DEMO_USER_PASSWORD` in `.env`. These are synthetic, test-only identities.
+
+**Upgrading an installation made before v3:** Keycloak imports the realm only into an empty
+database, so run `node scripts/identity-sync.mjs` once to add the new roles and demo users, then
+`npm run seed`. Existing tenants keep everything they had (they are given the
+`public-services` and `disaster-infrastructure` packs automatically).
 
 ## A five-minute tour
 
@@ -44,6 +53,20 @@ Password for all of them: `DEMO_USER_PASSWORD` in `.env`. These are synthetic, t
 4. As `derek.duty`: IoT operations. Watch the level cross the threshold line, an alarm and an
    incident appear; open the incident and acknowledge it. As `irene.commander`: resolve and close.
 5. As `adam.admin`: Administration → Audit records shows every step with who did it.
+
+Manufacturing and facilities (TITAN v3):
+
+6. Make a machine vibrate: `npm run simulate -- --user maya.admin --scenario fault --duration 120 --fault-device MER-MCM-001`
+7. As `sam.supervisor`: Production equipment shows the alarm and an equipment incident; Work
+   inbox has the incident and the automatic repair request. Acknowledge and approve.
+8. As `paula.planner`: approve the planning review (high priority), then Maintenance → open the
+   work order → assign it to `tim.technician`.
+9. As `tim.technician`: start and complete the work order. The machine returns to service and the
+   incident timeline shows the repair. `paula.planner` resolves the incident.
+10. As `rita.requester`: Facilities → Raise service request. As `fred.facilities`: approve it in
+    the Work inbox. No device takes part.
+11. As `maya.admin`: switch the Workspace selector between the enterprise view, Manufacturing and
+    Facilities management; Administration › Industry packs shows versions, configuration and history.
 
 ## Repository layout
 
@@ -74,7 +97,9 @@ docs/                       this documentation
 | Rebuild and restart one service | `docker compose --profile core up -d --build case-service` |
 | Logs of one service | `docker compose logs -f case-service` |
 | Regenerate API specifications | `npm run openapi:export` |
-| Regenerate the Keycloak realm | `node infrastructure/docker/keycloak/generate-realm.mjs` (then recreate Keycloak on an empty database) |
+| Regenerate the Keycloak realm | `node infrastructure/docker/keycloak/generate-realm.mjs` (then recreate Keycloak on an empty database, or run `node scripts/identity-sync.mjs`) |
+| Check pack manifests | `npm run build; node --test tests/contract/pack-manifests.test.ts` (no stack needed) |
+| Add a pack version | Copy the latest `services/tenant-service/packs/<id>/<version>.json` to a new version file, change it, set `lifecycle.upgrades_from`; never edit a released file |
 | SQL in a service database | `docker compose exec postgres psql -U postgres -d titan_case` |
 
 ## Working on a Node service

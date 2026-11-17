@@ -33,6 +33,20 @@ jobs:
       - name: Unit-test the AI gateway (pytest)
         run: docker build -f infrastructure/docker/python-service.Dockerfile --build-arg SERVICE_PATH=services/ai-gateway-service --target unit-test --progress=plain .
 
+      - name: Unit-test the analytics service (pytest)
+        run: docker build -f infrastructure/docker/python-service.Dockerfile --build-arg SERVICE_PATH=services/analytics-service --target unit-test --progress=plain .
+
+      - uses: actions/setup-node@v4
+        with:
+          # Running .ts test files directly needs Node's type stripping (22.18 or newer).
+          node-version: 24
+
+      - name: Validate the industry pack manifests (no stack needed)
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+          node --test tests/contract/pack-manifests.test.ts
+
       - name: Build the web command center
         run: docker build -f infrastructure/docker/web/Dockerfile .
 

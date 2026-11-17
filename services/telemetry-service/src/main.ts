@@ -1,22 +1,23 @@
 import { Controller, Get, Inject, Module } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, type Principal, RequireRoles } from '@titan/authentication';
-import { STAFF_ROLES } from '@titan/contracts';
-import { bootstrapService, PlatformModule, ZQuery } from '@titan/platform';
+import { Capabilities, STAFF_ROLES } from '@titan/contracts';
+import { bootstrapService, PlatformModule, RequireCapability, ZQuery } from '@titan/platform';
 import type { z } from 'zod';
-import { MeasurementsQuery, SeriesQuery, TelemetryService } from './telemetry.service.js';
+import { LatestQuery, MeasurementsQuery, SeriesQuery, TelemetryService } from './telemetry.service.js';
 
 @ApiTags('telemetry')
 @ApiBearerAuth()
 @Controller()
 @RequireRoles(...STAFF_ROLES)
+@RequireCapability(Capabilities.Iot)
 class TelemetryController {
   constructor(@Inject(TelemetryService) private readonly telemetry: TelemetryService) {}
 
   @Get('latest')
-  @ApiOperation({ summary: 'Latest reading per device and sensor' })
-  latest(@CurrentUser() user: Principal) {
-    return this.telemetry.latest(user);
+  @ApiOperation({ summary: 'Latest reading per device and sensor; optionally only some sensor kinds or one device' })
+  latest(@CurrentUser() user: Principal, @ZQuery(LatestQuery) query: z.infer<typeof LatestQuery>) {
+    return this.telemetry.latest(user, query);
   }
 
   @Get('measurements')

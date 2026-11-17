@@ -1,6 +1,6 @@
 import { Inject, Injectable, type OnApplicationBootstrap, type OnApplicationShutdown } from '@nestjs/common';
 import type { Principal } from '@titan/authentication';
-import { type EventEnvelope, type EventPayload, Roles } from '@titan/contracts';
+import { type EventEnvelope, type EventPayload, packActor, Roles } from '@titan/contracts';
 import { type Logger, newContext, runWithContext } from '@titan/observability';
 import { Db, DomainError, EventConsumers, LOGGER, Outbox, type Q } from '@titan/platform';
 import { z } from 'zod';
@@ -15,7 +15,21 @@ const RuleBase = z.object({
   clear_threshold: z.number().nullable().default(null),
   severity: z.enum(['info', 'warning', 'critical']),
   create_incident: z.boolean().default(true),
+  /** Category of the incident an alarm opens; omitted means the tenant's default category. */
+  incident_category: z.string().regex(/^[a-z][a-z0-9-]{1,62}$/).nullable().default(null),
   enabled: z.boolean().default(true),
+});
+
+/** An alert rule as carried by a pack activation event (configuration references already resolved). */
+const PackRuleTemplate = z.object({
+  name: z.string().min(2).max(200),
+  sensor_kind: z.string().regex(/^[a-z][a-z0-9_]{1,31}$/),
+  operator: z.enum(['gt', 'gte', 'lt', 'lte']),
+  threshold: z.number(),
+  clear_threshold: z.number().nullable(),
+  severity: z.enum(['info', 'warning', 'critical']),
+  create_incident: z.boolean(),
+  incident_category: z.string().optional(),
 });
 
 export const CreateRule = RuleBase.refine(clearThresholdIsConsistent, {
@@ -32,6 +46,7 @@ export const UpdateRule = z.object({
   clear_threshold: z.number().nullable().optional(),
   severity: z.enum(['info', 'warning', 'critical']).optional(),
   create_incident: z.boolean().optional(),
+  incident_category: z.string().regex(/^[a-z][a-z0-9-]{1,62}$/).nullable().optional(),
   enabled: z.boolean().optional(),
   expected_version: z.number().int().positive(),
 });
@@ -53,6 +68,8 @@ export interface RuleRow {
   clear_threshold: number | null;
   severity: 'info' | 'warning' | 'critical';
   create_incident: boolean;
+  incident_category: string | null;
+  pack_id: string | null;
   enabled: boolean;
   version: number;
   created_by: string;
@@ -84,8 +101,8 @@ export interface AlertRow {
   cleared_at: Date | null;
 }
 
-const RULE_COLUMNS = `id, tenant_id, name, sensor_kind, device_id, operator, threshold, clear_threshold, severity, create_incident, enabled,
-  version, created_by, created_at, updated_at`;
+const RULE_COLUMNS = `id, tenant_id, name, sensor_kind, device_id, operator, threshold, clear_threshold, severity, create_incident, incident_category,
+  pack_id, enabled, version, created_by, created_at, updated_at`;
 const ALERT_COLUMNS = `id, tenant_id, kind, rule_id, rule_name, device_id, device_name, sensor_kind, severity, status, operator, threshold,
   trigger_value, last_value, occurrences, first_triggered_at, last_triggered_at, acknowledged_by, acknowledged_at, escalated_at, cleared_at`;
 
@@ -107,7 +124,7 @@ export class AlertService implements OnApplicationBootstrap, OnApplicationShutdo
 
   onApplicationBootstrap(): void {
     this.consumers.register({
-      subjects: ['telemetry.measurement.accepted.v1', 'device.registered.v1', 'device.status_changed.v1'],
+      subjects: ['telemetry.measurement.accepted.v1', 'device.registered.v1', 'device.status_changed.v1', 'tenant.pack.activated.v1'],
       handler: (event, q) => this.onEvent(event, q),
     });
     this.timer = setInterval(() => void this.sweepEscalations(), ESCALATION_SWEEP_MS);
@@ -129,8 +146,8 @@ export class AlertService implements OnApplicationBootstrap, OnApplicationShutdo
   createRule(user: Principal, input: z.infer<typeof CreateRule>) {
     return this.db.tx(user.tenantId, (q) =>
       q.one<RuleRow>(
-        `INSERT INTO alert_rules (tenant_id, name, sensor_kind, device_id, operator, threshold, clear_threshold, severity, create_incident, enabled, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING ${RULE_COLUMNS}`,
+        `INSERT INTO alert_rules (tenant_id, name, sensor_kind, device_id, operator, threshold, clear_threshold, severity, create_incident, enabled, created_by, incident_category)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING ${RULE_COLUMNS}`,
         [
           user.tenantId,
           input.name,
@@ -143,6 +160,7 @@ export class AlertService implements OnApplicationBootstrap, OnApplicationShutdo
           input.create_incident,
           input.enabled,
           user.username,
+          input.incident_category,
         ],
       ),
     );
@@ -160,15 +178,16 @@ export class AlertService implements OnApplicationBootstrap, OnApplicationShutdo
         clear_threshold: input.clear_threshold === undefined ? current.clear_threshold : input.clear_threshold,
         severity: input.severity ?? current.severity,
         create_incident: input.create_incident ?? current.create_incident,
+        incident_category: input.incident_category === undefined ? current.incident_category : input.incident_category,
         enabled: input.enabled ?? current.enabled,
       };
       if (!clearThresholdIsConsistent(next)) throw DomainError.invalid('clear_threshold must be on the safe side of threshold');
       return q.one<RuleRow>(
         `UPDATE alert_rules
             SET name = $2, operator = $3, threshold = $4, clear_threshold = $5, severity = $6, create_incident = $7, enabled = $8,
-                version = version + 1, updated_at = now()
+                incident_category = $9, version = version + 1, updated_at = now()
           WHERE id = $1 RETURNING ${RULE_COLUMNS}`,
-        [id, next.name, next.operator, next.threshold, next.clear_threshold, next.severity, next.create_incident, next.enabled],
+        [id, next.name, next.operator, next.threshold, next.clear_threshold, next.severity, next.create_incident, next.enabled, next.incident_category],
       );
     });
   }
@@ -237,15 +256,53 @@ export class AlertService implements OnApplicationBootstrap, OnApplicationShutdo
         return this.onMeasurement(event.tenant_id, event.payload as EventPayload<'telemetry.measurement.accepted.v1'>, q);
       case 'device.registered.v1': {
         const p = event.payload as EventPayload<'device.registered.v1'>;
-        await q.exec('INSERT INTO device_names (device_id, tenant_id, name) VALUES ($1, $2, $3) ON CONFLICT (device_id) DO UPDATE SET name = EXCLUDED.name', [
-          p.device_id,
-          event.tenant_id,
-          p.name,
-        ]);
+        await q.exec(
+          'INSERT INTO device_names (device_id, tenant_id, name, asset_id) VALUES ($1, $2, $3, $4) ON CONFLICT (device_id) DO UPDATE SET name = EXCLUDED.name, asset_id = EXCLUDED.asset_id',
+          [p.device_id, event.tenant_id, p.name, p.asset_id],
+        );
         return;
       }
       case 'device.status_changed.v1':
         return this.onDeviceStatus(event.tenant_id, event.payload as EventPayload<'device.status_changed.v1'>, q);
+      case 'tenant.pack.activated.v1':
+        return this.installPackRules(event.tenant_id, event.payload as EventPayload<'tenant.pack.activated.v1'>, q);
+    }
+  }
+
+  /**
+   * Installs the alert rules of an industry pack for one tenant. Idempotent.
+   * A rule a person created (or changed the name of) is never touched: a pack
+   * only creates rules that do not exist and updates rules it installed itself.
+   */
+  private async installPackRules(tenantId: string, p: EventPayload<'tenant.pack.activated.v1'>, q: Q): Promise<void> {
+    for (const raw of p.install.alert_rules) {
+      const rule = PackRuleTemplate.parse(raw);
+      const existing = await q.maybeOne<RuleRow>(`SELECT ${RULE_COLUMNS} FROM alert_rules WHERE name = $1 FOR UPDATE`, [rule.name]);
+      if (!existing) {
+        await q.exec(
+          `INSERT INTO alert_rules (tenant_id, name, sensor_kind, operator, threshold, clear_threshold, severity, create_incident, incident_category, created_by, pack_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          [tenantId, rule.name, rule.sensor_kind, rule.operator, rule.threshold, rule.clear_threshold, rule.severity, rule.create_incident, rule.incident_category ?? null, packActor(p.pack_id, p.version), p.pack_id],
+        );
+        continue;
+      }
+      if (existing.pack_id !== p.pack_id) continue;
+      const changed =
+        existing.sensor_kind !== rule.sensor_kind ||
+        existing.operator !== rule.operator ||
+        existing.threshold !== rule.threshold ||
+        existing.clear_threshold !== rule.clear_threshold ||
+        existing.severity !== rule.severity ||
+        existing.create_incident !== rule.create_incident ||
+        existing.incident_category !== (rule.incident_category ?? null);
+      if (!changed) continue;
+      await q.exec(
+        `UPDATE alert_rules
+            SET sensor_kind = $2, operator = $3, threshold = $4, clear_threshold = $5, severity = $6, create_incident = $7, incident_category = $8,
+                version = version + 1, updated_at = now()
+          WHERE id = $1`,
+        [existing.id, rule.sensor_kind, rule.operator, rule.threshold, rule.clear_threshold, rule.severity, rule.create_incident, rule.incident_category ?? null],
+      );
     }
   }
 
@@ -288,7 +345,7 @@ export class AlertService implements OnApplicationBootstrap, OnApplicationShutdo
   }
 
   private async raiseThresholdAlert(q: Q, tenantId: string, rule: RuleRow, m: EventPayload<'telemetry.measurement.accepted.v1'>, observedAt: Date): Promise<void> {
-    const device = await q.maybeOne<{ name: string }>('SELECT name FROM device_names WHERE device_id = $1', [m.device_id]);
+    const device = await q.maybeOne<{ name: string; asset_id: string | null }>('SELECT name, asset_id FROM device_names WHERE device_id = $1', [m.device_id]);
     // ON CONFLICT against the partial unique index: if a concurrent
     // evaluation opened the alarm first, this insert does nothing.
     const alert = await q.maybeOne<AlertRow>(
@@ -319,6 +376,8 @@ export class AlertService implements OnApplicationBootstrap, OnApplicationShutdo
         operator: OPERATOR_SYMBOL[rule.operator],
         create_incident: rule.create_incident,
         triggered_at: observedAt.toISOString(),
+        incident_category: rule.incident_category,
+        asset_id: device?.asset_id ?? null,
       },
     });
   }

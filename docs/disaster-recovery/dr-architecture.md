@@ -52,6 +52,7 @@ been drilled.
 | Application configuration | `.env.example`, compose file, realm generator: all in Git | Helm values per region in Git |
 | Secrets and encryption keys | Development values only | Secret manager replicated to the DR region; never restored from backups; key-management service with multi-region keys |
 | Audit records | Database, append-only; replicated and backed up | Same, plus export to immutable storage |
+| Industry-pack configuration (v3) | `tenant_packs`, `pack_catalog`, `tenant_pack_history`, `dashboard_layouts` in `titan_tenant`, and what packs installed in each owner (definitions, categories, rules, request types, entitlement projections): in the replicated, backed-up databases. Verified by the restore drill. Also exportable per tenant (`GET /api/tenant/packs/export`) and restorable (`POST /api/tenant/packs/import`) | Same; the manifests themselves are in Git |
 | Analytical datasets | Lake volume, **not backed up**; rebuildable from bronze / the stream | Object storage; rebuild procedure in the data-engineering document |
 | AI knowledge sources | `titan_ai` database (documents, chunks, embeddings): replicated and backed up | Same; embeddings can be regenerated from document text |
 

@@ -88,6 +88,23 @@ services:
       start_period: 20s
     mem_limit: 1g
 
+  # One-shot: creates the database and roles of any service added after this
+  # installation's data directory was first initialised. Creates only what is
+  # missing; never changes or drops anything.
+  postgres-ensure:
+    image: titan/postgres:dev
+    networks: [titan]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["/usr/local/bin/titan-ensure-databases.sh"]
+    environment:
+      PGHOST: ${DB_HOST:-postgres}
+      PGUSER: ${POSTGRES_SUPERUSER}
+      PGPASSWORD: ${POSTGRES_SUPERUSER_PASSWORD}
+      DB_DEV_PASSWORD: ${DB_DEV_PASSWORD}
+
   nats:
     image: nats:2.12-alpine
     restart: unless-stopped
@@ -303,6 +320,27 @@ services:
       DATABASE_URL: postgres://incident_app:${DB_DEV_PASSWORD}_incident_app@${DB_HOST:-postgres}:5432/titan_incident
       DATABASE_OWNER_URL: postgres://incident_owner:${DB_DEV_PASSWORD}_incident_owner@${DB_HOST:-postgres}:5432/titan_incident
 
+  # Reusable business capability (layer B): activated per tenant by industry packs.
+  maintenance-service:
+    <<: *node-service
+    image: titan/maintenance-service:dev
+    build:
+      <<: *node-build
+      args:
+        SERVICE_PATH: services/maintenance-service
+    profiles: [core]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      postgres-ensure:
+        condition: service_completed_successfully
+    environment:
+      <<: *node-env
+      SERVICE_NAME: maintenance-service
+      DB_APP_ROLE: maintenance_app
+      DATABASE_URL: postgres://maintenance_app:${DB_DEV_PASSWORD}_maintenance_app@${DB_HOST:-postgres}:5432/titan_maintenance
+      DATABASE_OWNER_URL: postgres://maintenance_owner:${DB_DEV_PASSWORD}_maintenance_owner@${DB_HOST:-postgres}:5432/titan_maintenance
+
   # ---------------------------------------------- intelligent infrastructure
   mosquitto:
     image: eclipse-mosquitto:2.0
@@ -435,6 +473,8 @@ services:
       DATABASE_OWNER_URL: postgres://analytics_owner:${DB_DEV_PASSWORD}_analytics_owner@${DB_HOST:-postgres}:5432/titan_analytics
       # Read-only role used exclusively for approved query templates.
       DATABASE_READONLY_URL: postgres://analytics_ro:${DB_DEV_PASSWORD}_analytics_ro@${DB_HOST:-postgres}:5432/titan_analytics
+      # Asked, with the caller's own token, which capabilities and query templates the caller's tenant has.
+      TENANT_URL: http://tenant-service:3000
       SERVICE_CLIENT_ID: ""
       SERVICE_CLIENT_SECRET: ""
     volumes:
@@ -479,6 +519,9 @@ services:
       INCIDENT_URL: http://incident-service:3000
       TELEMETRY_URL: http://telemetry-service:3000
       WORKFLOW_URL: http://workflow-service:3000
+      MAINTENANCE_URL: http://maintenance-service:3000
+      # Which tools the caller's tenant may use (from its active industry packs).
+      TENANT_URL: http://tenant-service:3000
     mem_limit: 384m
     security_opt: ["no-new-privileges:true"]
 
@@ -507,6 +550,31 @@ services:
         condition: service_healthy
     working_dir: /repo
     command: ["node", "scripts/sensor-simulator.mjs", "--scenario", "${SIMULATOR_SCENARIO:-normal}", "--interval", "${SIMULATOR_INTERVAL_SECONDS:-3}"]
+    environment:
+      TITAN_KEYCLOAK_URL: http://keycloak:8080
+      TITAN_GATEWAY_URL: http://gateway:3000
+      TITAN_MQTT_URL: mqtt://mosquitto:1883
+      MQTT_SIMULATOR_USER: ${MQTT_SIMULATOR_USER}
+      MQTT_SIMULATOR_PASSWORD: ${MQTT_SIMULATOR_PASSWORD}
+      DEMO_USER_PASSWORD: ${DEMO_USER_PASSWORD}
+    volumes:
+      - ./scripts:/repo/scripts:ro
+    healthcheck:
+      disable: true
+    mem_limit: 128m
+
+  sensor-simulator-manufacturing:
+    # Synthetic machine condition readings (vibration, bearing temperature,
+    # spindle load) for tenant "meridian" (manufacturing pack).
+    image: titan/telemetry-service:dev
+    restart: unless-stopped
+    networks: [titan]
+    profiles: [iot]
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    working_dir: /repo
+    command: ["node", "scripts/sensor-simulator.mjs", "--user", "maya.admin", "--scenario", "${MANUFACTURING_SIMULATOR_SCENARIO:-normal}", "--interval", "${SIMULATOR_INTERVAL_SECONDS:-3}"]
     environment:
       TITAN_KEYCLOAK_URL: http://keycloak:8080
       TITAN_GATEWAY_URL: http://gateway:3000

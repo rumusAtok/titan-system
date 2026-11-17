@@ -4,9 +4,9 @@ import { CurrentUser, type Principal, RequireRoles } from '@titan/authentication
 import { Roles, STAFF_ROLES } from '@titan/contracts';
 import { bootstrapService, PlatformModule, uuidParam, ZBody, ZQuery } from '@titan/platform';
 import type { z } from 'zod';
-import { AssetService, ChangeStatus, CreateAsset, CreateCategory, ListAssets, RecordMaintenance, UpdateAsset } from './asset.service.js';
+import { AssetService, ChangeStatus, CreateAsset, CreateCategory, ListAssets, PublishAttributeSchema, RecordMaintenance, UpdateAsset } from './asset.service.js';
 
-const WRITERS = [Roles.AssetManager, Roles.TenantAdmin];
+const WRITERS = [Roles.AssetManager, Roles.TenantAdmin, Roles.FacilityManager];
 
 @ApiTags('assets')
 @ApiBearerAuth()
@@ -24,6 +24,19 @@ class AssetController {
   @RequireRoles(...WRITERS)
   createCategory(@CurrentUser() user: Principal, @ZBody(CreateCategory) body: z.infer<typeof CreateCategory>) {
     return this.assets.createCategory(user, body);
+  }
+
+  @Get('categories/:code/attribute-schemas')
+  @ApiOperation({ summary: 'Attribute schema versions of a category, with the number of assets on each' })
+  listSchemas(@CurrentUser() user: Principal, @Param('code') code: string) {
+    return this.assets.listAttributeSchemas(user, code);
+  }
+
+  @Post('categories/:code/attribute-schemas')
+  @RequireRoles(Roles.AssetManager, Roles.TenantAdmin)
+  @ApiOperation({ summary: 'Publish the next attribute schema version of a category; it applies to assets created or edited afterwards' })
+  publishSchema(@CurrentUser() user: Principal, @Param('code') code: string, @ZBody(PublishAttributeSchema) body: z.infer<typeof PublishAttributeSchema>) {
+    return this.assets.publishAttributeSchema(user, code, body);
   }
 
   @Get('assets')

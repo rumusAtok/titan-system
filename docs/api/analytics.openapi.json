@@ -1,6 +1,33 @@
 {
   "components": {
     "schemas": {
+      "DatasetQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "filters": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "default": {},
+            "title": "Filters",
+            "type": "object"
+          },
+          "limit": {
+            "default": 2000,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "title": "DatasetQuery",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -106,6 +133,82 @@
           }
         },
         "summary": "Analytical datasets with freshness and provenance",
+        "tags": [
+          "datasets"
+        ]
+      }
+    },
+    "/datasets/registry": {
+      "get": {
+        "operationId": "dataset_registry_datasets_registry_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Approved analytical datasets, their columns and filters, and whether the caller's tenant may read them",
+        "tags": [
+          "datasets"
+        ]
+      }
+    },
+    "/datasets/{name}/query": {
+      "post": {
+        "operationId": "query_dataset_datasets__name__query_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/DatasetQuery"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read a registered dataset for the caller's tenant, with equality filters on its declared columns",
         "tags": [
           "datasets"
         ]

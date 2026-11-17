@@ -73,6 +73,10 @@ Verified by Test D and the failover drill (see the verification report).
 | `tenant.created.v1` | A tenant is created | `tenant_id`, `name`, `slug` |
 | `tenant.department.created.v1` | A department is added | `department_id`, `code`, `name` |
 | `tenant.config.updated.v1` | Tenant configuration saved | `keys` |
+| `tenant.site.created.v1` | A site (plant, building, line, ...) is added | `site_id`, `code`, `kind`, `parent_id` |
+| `tenant.pack.activated.v1` | A pack is activated, upgraded, reconfigured or re-synchronised | `pack_id`, `version`, `previous_version`, `reason`, `install` (templates per owning service, configuration resolved) |
+| `tenant.pack.deactivated.v1` | A pack is deactivated (nothing is deleted) | `pack_id`, `version`, `deactivated_by` |
+| `tenant.entitlements.changed.v1` | The capabilities or packs of a tenant change | `revision` (only grows), `capabilities`, `packs` |
 
 ### Case
 | Type | Emitted when | Key payload fields |
@@ -84,7 +88,9 @@ Verified by Test D and the failover drill (see the verification report).
 ### Workflow
 | Type | Emitted when | Key payload fields |
 | --- | --- | --- |
-| `workflow.instance.started.v1` | A process starts for a case or incident | `instance_id`, `subject_type`, `subject_id`, `definition_key`, `definition_version` |
+| `workflow.start.requested.v1` | The owner of a subject asks for its process (any registered subject type) | `subject_type`, `subject_id`, `workflow_key`, `reference`, `title`, `requester_id`, `context` |
+| `workflow.cancel.requested.v1` | The owner withdraws a subject | `subject_type`, `subject_id`, `cancelled_by` |
+| `workflow.instance.started.v1` | A process starts for any registered subject | `instance_id`, `subject_type`, `subject_id`, `definition_key`, `definition_version` |
 | `workflow.task.assigned.v1` | A task is created for a role | `task_id`, `subject_*`, `stage_key`, `stage_name`, `role`, `due_at` |
 | `workflow.task.closed.v1` | A task is completed or cancelled | `task_id`, `status`, `decision`, `assigned_at`, `closed_at` |
 | `workflow.decision.approved.v1` / `rejected.v1` / `returned.v1` | A decision is recorded | `decision_id`, `task_id`, `stage_key`, `decided_by`, `on_behalf_of`, `comment` |
@@ -108,11 +114,24 @@ Verified by Test D and the failover drill (see the verification report).
 | --- | --- | --- |
 | `telemetry.measurement.accepted.v1` | A reading is stored (once per reading) | `device_id`, `sensor_kind`, `value`, `quality`, `observed_at`, `received_at`, `processed_at` |
 | `telemetry.device.heartbeat.v1` | A device reported (throttled) | `device_id`, `last_received_at` |
-| `alert.raised.v1` | A rule is breached with no open alarm, or a device goes offline | `alert_id`, `kind`, `rule_name`, `severity`, `value`, `threshold`, `create_incident` |
+| `alert.raised.v1` | A rule is breached with no open alarm, or a device goes offline | `alert_id`, `kind`, `rule_name`, `severity`, `value`, `threshold`, `create_incident`; v3 adds optional `incident_category`, `asset_id` |
 | `alert.acknowledged.v1` / `alert.cleared.v1` | Acknowledged / condition ended | `alert_id` |
-| `incident.created.v1` | An incident is opened | `incident_id`, `reference_no`, `severity`, `source_type`, `source_id` |
+| `incident.created.v1` | An incident is opened | `incident_id`, `reference_no`, `severity`, `source_type` (alert, manual, inspection, work_order, service_request, external), `source_id`; v3 adds optional `category`, `asset_id`, `workflow_key` |
 | `incident.acknowledged.v1` / `incident.resolved.v1` | Response step completed | `incident_id`, actor, timestamps |
 | `incident.assigned.v1` | An assignee is set | `assignee_id` |
+
+### Maintenance (TITAN v3)
+| Type | Emitted when | Key payload fields |
+| --- | --- | --- |
+| `maintenance.request.submitted.v1` | A maintenance or service request is raised (by a person or from an incident) | `request_id`, `reference_no`, `request_type`, `pack_id` (optional), `priority`, `origin_type`, `origin_id`, `asset_id` |
+| `maintenance.request.decided.v1` | Its approval process ends, or it is withdrawn | `request_id`, `outcome`, `decided_at` |
+| `maintenance.work_order.created.v1` | An approved request becomes a work order | `work_order_id`, `request_id`, `priority`, `asset_id`, `origin_*` |
+| `maintenance.work_order.assigned.v1` / `started.v1` | Assigned to a technician / work started | `assignee_*` / `started_at` |
+| `maintenance.work_order.completed.v1` | Work completed | `summary`, `labor_hours`, `condition_after`, `started_at`, `completed_at` |
+| `maintenance.work_order.cancelled.v1` | Work order cancelled | `reason` |
+
+The new fields of existing events are optional, so events written before v3 still validate
+(this was found by the event contract test when `pack_id` was first added as required).
 
 ### Notifications, security, platform
 | Type | Emitted when | Key payload fields |

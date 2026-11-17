@@ -12,16 +12,20 @@ test.describe('role-based navigation', () => {
     await expect(page.getByTestId('user-roles')).toHaveText('Applicant');
   });
 
-  test('a validation officer sees operational screens and the review inbox, not administration', async ({ page }) => {
+  test('a validation officer sees the universal workspace, the packs of the tenant, and no administration', async ({ page }) => {
     await login(page, 'victor.validator');
-    await expect(navLinks(page)).toHaveText(['Executive dashboard', 'Applications', 'Review inbox', 'IoT operations', 'GIS operations', 'AI workspace']);
+    // Navigation comes from the tenant's industry packs (TITAN v3): the universal core first,
+    // then public services and disaster/infrastructure management. The v2 entries are all still there.
+    await expect(navLinks(page)).toHaveText([
+      'Workspace', 'Work inbox', 'Assets', 'Incidents',
+      'Executive dashboard', 'Applications', 'Review inbox', 'IoT operations', 'GIS operations', 'AI workspace',
+    ]);
   });
 
   test('a tenant administrator additionally sees administration and disaster recovery', async ({ page }) => {
     await login(page, 'adam.admin');
-    const labels = await navLinks(page).allTextContents();
-    expect(labels).toContain('Administration');
-    expect(labels).toContain('Disaster recovery');
+    // The menu is loaded from the tenant's workspace (v3): wait for it rather than reading it once.
+    await expect(navLinks(page)).toContainText(['Administration', 'Disaster recovery']);
     await expect(page.getByTestId('tenant-name')).toHaveText('Riverbend City Council');
   });
 

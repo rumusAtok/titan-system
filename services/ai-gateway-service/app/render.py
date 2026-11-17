@@ -17,18 +17,17 @@ def _when(value: Any) -> str:
 def kpi_summary(d: dict[str, Any]) -> str:
     a, t, i, s, x = d["approvals"], d["workflow_tasks"], d["incidents"], d["sensors"], d["assets"]
     hours = a.get("avg_turnaround_hours")
-    return "\n".join(
-        [
-            "Operational summary [1]:",
-            f"- Approvals: {a['completed']} completed ({a['approved']} approved, {a['rejected']} rejected)"
-            + (f", average turnaround {hours} h." if hours is not None else "."),
-            f"- Workflow: {t['pending']} case task(s) pending, {t['overdue']} overdue.",
-            f"- Incidents: {i['total']} recorded; {i['open']} open, {i['acknowledged']} acknowledged, {i['active_critical']} active critical.",
-            f"- Sensors: {s['online']} of {s['devices']} online"
-            + (f", average availability {s['avg_availability_pct']}% over the last hour." if s.get("avg_availability_pct") is not None else "."),
-            f"- Assets: {x['total']} registered, {x['under_maintenance']} under maintenance, {x['maintenance_overdue']} with overdue maintenance.",
-        ]
-    )
+    lines = [
+        "Operational summary [1]:",
+        f"- Approvals: {a['completed']} completed ({a['approved']} approved, {a['rejected']} rejected)"
+        + (f", average turnaround {hours} h." if hours is not None else "."),
+        f"- Workflow: {t['pending']} case task(s) pending, {t['overdue']} overdue.",
+        f"- Incidents: {i['total']} recorded; {i['open']} open, {i['acknowledged']} acknowledged, {i['active_critical']} active critical.",
+        f"- Sensors: {s['online']} of {s['devices']} online"
+        + (f", average availability {s['avg_availability_pct']}% over the last hour." if s.get("avg_availability_pct") is not None else "."),
+        f"- Assets: {x['total']} registered, {x['under_maintenance']} under maintenance, {x['maintenance_overdue']} with overdue maintenance.",
+    ]
+    return "\n".join(lines)
 
 
 def incidents(rows: list[dict[str, Any]]) -> str:
@@ -72,6 +71,22 @@ def water_levels(rows: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def equipment_readings(rows: list[dict[str, Any]]) -> str:
+    lines = ["Latest machine condition readings (synthetic sensor data) [1]:"]
+    for r in sorted(rows, key=lambda r: (str(r.get("device")), str(r.get("metric")))):
+        lines.append(f"- {r['device']} ({r['serial_no']}): {r['metric']} {r['value']} {r['unit']}, quality {r['quality']}, observed {_when(r['observed_at'])}")
+    return "\n".join(lines)
+
+
+def maintenance_backlog(rows: list[dict[str, Any]]) -> str:
+    lines = [f"{len(rows)} work order(s) not yet completed, most urgent first:"]
+    for n, r in enumerate(rows, 1):
+        where = f" on {r['asset']}" if r.get("asset") else ""
+        who = f", assigned to {r['assignee']}" if r.get("assignee") else ", not assigned"
+        lines.append(f"- {r['reference_no']} [{n}]: {r['title']}{where} | priority {r['priority']}, status {r['status']}{who}, created {_when(r['created_at'])}")
+    return "\n".join(lines)
+
+
 def documents(d: dict[str, Any]) -> str:
     lines = [f"Passages found in approved reference documents ({d['retrieval']} search):"]
     for n, p in enumerate(d["passages"], 1):
@@ -101,6 +116,8 @@ RENDERERS = {
     "get_incident": incident,
     "workflow_bottlenecks": bottlenecks,
     "water_levels": water_levels,
+    "equipment_readings": equipment_readings,
+    "maintenance_backlog": maintenance_backlog,
     "search_documents": documents,
     "run_query_template": rows,
     "propose_incident_note": proposal,
@@ -111,10 +128,25 @@ def render(tool: str, data: Any) -> str:
     return RENDERERS[tool](data)
 
 
-def daily_report(tenant_name: str, sections: dict[str, Any], generated_at: str) -> str:
+REPORT_SECTIONS = {
+    "kpi_summary": "Summary",
+    "list_incidents": "Active incidents",
+    "workflow_bottlenecks": "Workflow backlog",
+    "water_levels": "Water levels",
+    "equipment_readings": "Machine condition",
+    "maintenance_backlog": "Maintenance backlog",
+}
+
+
+def report_headings(tools: list[str]) -> list[tuple[str, str]]:
+    """Numbered headings for the sections a tenant's report has (one per tool it may use)."""
+    return [(tool, f"{n}. {REPORT_SECTIONS[tool]}") for n, tool in enumerate([t for t in REPORT_SECTIONS if t in tools], 1)]
+
+
+def daily_report(tenant_name: str, sections: dict[str, Any], generated_at: str, tools: list[str] | None = None) -> str:
     parts = [f"DRAFT - Daily operations report - {tenant_name}", f"Prepared {generated_at}. Requires human review before use.", ""]
-    numbering = {"kpi_summary": "1. Summary", "list_incidents": "2. Active incidents", "workflow_bottlenecks": "3. Workflow backlog", "water_levels": "4. Water levels"}
-    for tool, heading in numbering.items():
+    # Default: the four sections every report had before industry packs existed.
+    for tool, heading in report_headings(tools or ["kpi_summary", "list_incidents", "workflow_bottlenecks", "water_levels"]):
         parts.append(heading)
         section = sections.get(tool)
         if section is None:

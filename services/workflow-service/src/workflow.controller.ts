@@ -25,6 +25,12 @@ export class WorkflowController {
     return this.workflow.createDefinition(user, body);
   }
 
+  @Get('subject-types')
+  @ApiOperation({ summary: 'Registered business subject types a workflow can be defined for' })
+  subjectTypes() {
+    return this.workflow.listSubjectTypes();
+  }
+
   @Get('tasks')
   @RequireRoles(...STAFF_ROLES)
   @ApiOperation({ summary: "Review inbox: tasks for the caller's roles and active delegations" })
@@ -54,7 +60,7 @@ export class WorkflowController {
   }
 
   @Get('instances/by-subject/:subjectType/:subjectId')
-  @ApiOperation({ summary: 'Process state, planned stages, tasks and decision history for a case or incident' })
+  @ApiOperation({ summary: 'Process state, planned stages, tasks and decision history for a business subject (case, incident, maintenance request, ...)' })
   bySubject(@CurrentUser() user: Principal, @Param('subjectType') subjectType: string, @Param('subjectId', uuidParam) subjectId: string) {
     return this.workflow.getInstanceBySubject(user, subjectType, subjectId);
   }

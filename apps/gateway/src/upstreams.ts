@@ -31,6 +31,7 @@ const SPECS: UpstreamSpec[] = [
   { key: 'telemetry', service: 'telemetry-service', port: 3000, critical: true },
   { key: 'alert', service: 'alert-service', port: 3000, critical: true },
   { key: 'incident', service: 'incident-service', port: 3000, critical: true },
+  { key: 'maintenance', service: 'maintenance-service', port: 3000 },
   { key: 'analytics', service: 'analytics-service', port: 8000 },
   { key: 'pipeline', service: 'data-pipeline-service', port: 8000, timeoutMs: 120_000 },
   { key: 'ai', service: 'ai-gateway-service', port: 8000, timeoutMs: 180_000 },

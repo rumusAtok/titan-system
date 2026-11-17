@@ -5,6 +5,7 @@ import { createLogger, type Logger } from '@titan/observability';
 import { CONFIG, loadConfig, LOGGER, type PlatformConfig } from './config.js';
 import { EventConsumers } from './consumer.js';
 import { Db } from './db.js';
+import { CapabilityGuard, Entitlements } from './entitlements.js';
 import { HealthController } from './health.controller.js';
 import { NatsClient } from './nats.js';
 import { Outbox, OutboxRelay } from './outbox.js';
@@ -58,6 +59,9 @@ export class PlatformModule {
         Outbox,
         OutboxRelay,
         EventConsumers,
+        Entitlements,
+        // Second global guard, after AuthGuard: capability entitlement of the caller's tenant.
+        { provide: APP_GUARD, useClass: CapabilityGuard },
         {
           // Denied access is recorded as a durable security event (audit trail).
           provide: ACCESS_DENIED_HOOK,
@@ -85,7 +89,7 @@ export class PlatformModule {
             },
         },
       );
-      exports.push(Db, Outbox, EventConsumers);
+      exports.push(Db, Outbox, EventConsumers, Entitlements);
     }
 
     return { module: PlatformModule, controllers: [HealthController], providers, exports };

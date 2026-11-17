@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Inject, Injectable, type OnApplicationBootstrap } from '@nestjs/common';
 import { hasAnyRole, type Principal } from '@titan/authentication';
-import { type EventEnvelope, type EventPayload, REVIEWER_ROLES, Roles } from '@titan/contracts';
+import { canonicalJson, type EventEnvelope, type EventPayload, packActor, REVIEWER_ROLES, Roles } from '@titan/contracts';
 import { Db, DomainError, EventConsumers, Outbox, type Q } from '@titan/platform';
 import { z } from 'zod';
 import { checkAttachment, FormFields, type FormField, sanitizeFilename, validateFormData } from './forms.js';
@@ -77,9 +77,35 @@ export class CaseService implements OnApplicationBootstrap {
 
   onApplicationBootstrap(): void {
     this.consumers.register({
-      subjects: ['workflow.task.assigned.v1', 'workflow.case.returned.v1', 'workflow.case.completed.v1'],
-      handler: (event, q) => this.onWorkflowEvent(event, q),
+      subjects: ['workflow.task.assigned.v1', 'workflow.case.returned.v1', 'workflow.case.completed.v1', 'tenant.pack.activated.v1'],
+      handler: (event, q) => (event.event_type === 'tenant.pack.activated.v1' ? this.installPackForms(event, q) : this.onWorkflowEvent(event, q)),
     });
+  }
+
+  /**
+   * Installs the forms of an industry pack for one tenant. Idempotent: a form
+   * whose content is already the active version is left alone; changed content
+   * becomes a new version, and existing cases keep the version they were made with.
+   */
+  private async installPackForms(event: EventEnvelope, q: Q): Promise<void> {
+    const p = event.payload as EventPayload<'tenant.pack.activated.v1'>;
+    for (const raw of p.install.forms) {
+      const form = CreateForm.parse(raw);
+      const active = await q.maybeOne<{ title: string; description: string; workflow_key: string; fields: unknown }>(
+        'SELECT title, description, workflow_key, fields FROM form_definitions WHERE key = $1 AND active FOR UPDATE',
+        [form.key],
+      );
+      const content = (f: { title: string; description: string; workflow_key: string; fields: unknown }) =>
+        canonicalJson({ title: f.title, description: f.description, workflow_key: f.workflow_key, fields: FormFields.safeParse(f.fields).data ?? f.fields });
+      if (active && content(active) === content(form)) continue;
+      const { next } = await q.one<{ next: number }>('SELECT COALESCE(max(version), 0) + 1 AS next FROM form_definitions WHERE key = $1', [form.key]);
+      await q.exec('UPDATE form_definitions SET active = false WHERE key = $1 AND active', [form.key]);
+      await q.exec(
+        `INSERT INTO form_definitions (tenant_id, key, version, title, description, workflow_key, fields, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [event.tenant_id, form.key, next, form.title, form.description, form.workflow_key, JSON.stringify(form.fields), packActor(p.pack_id, p.version)],
+      );
+    }
   }
 
   // --- forms ---------------------------------------------------------------

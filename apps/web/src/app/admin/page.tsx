@@ -3,11 +3,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useEffect, useState } from 'react';
 import { Badge, Button, Card, type Column, DataTable, Dialog, EmptyState, Field, InlineError, KeyValue, PageHeader, QueryView, inputClass } from '@/components/ui';
+import { IndustryPacks } from '@/components/packs-admin';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { dateTime, titleCase } from '@/lib/format';
 
-const TABS = ['Organisation', 'Roles and members', 'Workflows', 'Audit records'] as const;
+const TABS = ['Organisation', 'Industry packs', 'Roles and members', 'Workflows', 'Audit records'] as const;
 type Tab = (typeof TABS)[number];
 
 function Organisation() {
@@ -249,7 +250,7 @@ export default function AdminPage() {
   const [tab, setTab] = useState<Tab>(available[0]!);
   return (
     <>
-      <PageHeader title="Administration" description="Tenant configuration, organisation, roles, workflow definitions and the audit trail." />
+      <PageHeader title="Administration" description="Tenant configuration, industry packs, organisation, roles, workflow definitions and the audit trail." />
       <div role="tablist" aria-label="Administration sections" className="mb-6 flex flex-wrap gap-1 border-b border-line">
         {available.map((t) => (
           <button key={t} role="tab" type="button" aria-selected={tab === t} onClick={() => setTab(t)} className={`-mb-px rounded-t-md border-b-2 px-4 py-2 text-sm font-medium ${tab === t ? 'border-brand-600 text-brand-700' : 'border-transparent text-ink-muted hover:text-ink'}`}>
@@ -259,6 +260,7 @@ export default function AdminPage() {
       </div>
       <div role="tabpanel" aria-label={tab}>
         {tab === 'Organisation' && <Organisation />}
+        {tab === 'Industry packs' && <IndustryPacks />}
         {tab === 'Roles and members' && <RolesAndMembers />}
         {tab === 'Workflows' && <Workflows />}
         {tab === 'Audit records' && <Audit />}

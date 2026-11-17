@@ -9,6 +9,8 @@ export declare const config: {
 };
 export declare const TENANT_A: string;
 export declare const TENANT_B: string;
+export declare const TENANT_C: string;
+export declare const TENANT_D: string;
 export declare function loadEnv(): Record<string, string | undefined>;
 export declare function tokenFor(username: string): Promise<string>;
 export declare function claimsOf(token: string): Record<string, any>;

@@ -1,6 +1,6 @@
 import { Inject, Injectable, type OnApplicationBootstrap, type OnApplicationShutdown } from '@nestjs/common';
 import type { Principal } from '@titan/authentication';
-import type { EventEnvelope, EventPayload } from '@titan/contracts';
+import { canonicalJson, type EventEnvelope, type EventPayload, packActor, PackSensor, PackSensorProfile } from '@titan/contracts';
 import { type Logger, newContext, runWithContext } from '@titan/observability';
 import { Db, DomainError, EventConsumers, LOGGER, Outbox, type Q } from '@titan/platform';
 import { z } from 'zod';
@@ -14,20 +14,37 @@ export const SensorInput = z
   })
   .refine((s) => s.min_valid === null || s.max_valid === null || s.min_valid < s.max_valid, { message: 'min_valid must be below max_valid' });
 
+const profileKey = z.string().regex(/^[a-z][a-z0-9-]{1,62}$/);
+
 export const RegisterDevice = z
   .object({
     serial_no: z.string().min(3).max(64),
     name: z.string().min(2).max(200),
-    device_type: z.string().min(2).max(64),
+    /** Sensor profile to register the device from. Its device type, reporting interval and sensors apply unless given here. */
+    profile_key: profileKey.optional(),
+    device_type: z.string().min(2).max(64).optional(),
     asset_id: z.uuid().nullable().default(null),
     latitude: z.number().min(-90).max(90).nullable().default(null),
     longitude: z.number().min(-180).max(180).nullable().default(null),
-    expected_interval_seconds: z.number().int().min(1).max(86_400).default(30),
+    expected_interval_seconds: z.number().int().min(1).max(86_400).optional(),
     config: z.record(z.string(), z.unknown()).default({}),
-    sensors: z.array(SensorInput).min(1).max(32),
+    sensors: z.array(SensorInput).max(32).default([]),
   })
   .refine((d) => (d.latitude === null) === (d.longitude === null), { message: 'latitude and longitude must be given together' })
-  .refine((d) => new Set(d.sensors.map((s) => s.kind)).size === d.sensors.length, { message: 'sensor kinds must be distinct' });
+  .refine((d) => new Set(d.sensors.map((s) => s.kind)).size === d.sensors.length, { message: 'sensor kinds must be distinct' })
+  .refine((d) => d.profile_key !== undefined || (d.sensors.length > 0 && d.device_type !== undefined), {
+    message: 'give a profile_key, or a device_type with at least one sensor',
+  });
+
+export const CreateProfile = z
+  .object({
+    key: profileKey,
+    name: z.string().min(2).max(200),
+    device_type: z.string().min(2).max(64),
+    expected_interval_seconds: z.number().int().min(1).max(86_400).default(30),
+    sensors: z.array(PackSensor).min(1).max(32),
+  })
+  .refine((p) => new Set(p.sensors.map((s) => s.kind)).size === p.sensors.length, { message: 'sensor kinds must be distinct' });
 
 export const UpdateConfig = z.object({
   config: z.record(z.string(), z.unknown()),
@@ -36,8 +53,24 @@ export const UpdateConfig = z.object({
 
 export const ListDevices = z.object({
   status: z.enum(['registered', 'online', 'offline', 'decommissioned']).optional(),
+  device_type: z.string().max(64).optional(),
+  profile_key: profileKey.optional(),
+  asset_id: z.uuid().optional(),
   limit: z.coerce.number().int().min(1).max(500).default(200),
 });
+
+interface ProfileRow {
+  id: string;
+  key: string;
+  name: string;
+  device_type: string;
+  expected_interval_seconds: number;
+  sensors: { kind: string; label: string; unit: string; min_valid: number | null; max_valid: number | null }[];
+  pack_id: string | null;
+  version: number;
+}
+
+const PROFILE_COLUMNS = 'id, key, name, device_type, expected_interval_seconds, sensors, pack_id, version';
 
 export interface DeviceRow {
   id: string;
@@ -55,10 +88,11 @@ export interface DeviceRow {
   version: number;
   registered_at: Date;
   updated_at: Date;
+  profile_key: string | null;
 }
 
 const COLUMNS = `id, tenant_id, serial_no, name, device_type, asset_id, latitude, longitude, status, expected_interval_seconds,
-  config, last_seen_at, version, registered_at, updated_at`;
+  config, last_seen_at, version, registered_at, updated_at, profile_key`;
 
 const OFFLINE_SWEEP_MS = Number(process.env.OFFLINE_SWEEP_MS ?? 10_000);
 const MIN_SILENCE_SECONDS = Number(process.env.OFFLINE_MIN_SILENCE_SECONDS ?? 20);
@@ -76,7 +110,10 @@ export class DeviceService implements OnApplicationBootstrap, OnApplicationShutd
   ) {}
 
   onApplicationBootstrap(): void {
-    this.consumers.register({ subjects: ['telemetry.device.heartbeat.v1'], handler: (event, q) => this.onHeartbeat(event, q) });
+    this.consumers.register({
+      subjects: ['telemetry.device.heartbeat.v1', 'tenant.pack.activated.v1'],
+      handler: (event, q) => (event.event_type === 'tenant.pack.activated.v1' ? this.installPackProfiles(event, q) : this.onHeartbeat(event, q)),
+    });
     this.timer = setInterval(() => void this.sweepOffline(), OFFLINE_SWEEP_MS);
     this.timer.unref();
   }
@@ -85,11 +122,98 @@ export class DeviceService implements OnApplicationBootstrap, OnApplicationShutd
     clearInterval(this.timer);
   }
 
-  register(user: Principal, input: z.infer<typeof RegisterDevice>) {
+  // ---------------------------------------------------------------------------
+  // Sensor profiles
+  // ---------------------------------------------------------------------------
+
+  listProfiles(user: Principal) {
+    return this.db.tx(user.tenantId, (q) =>
+      q.query(
+        `SELECT ${PROFILE_COLUMNS}, (SELECT count(*)::int FROM devices d WHERE d.profile_key = sensor_profiles.key AND d.status <> 'decommissioned') AS device_count
+           FROM sensor_profiles ORDER BY key`,
+      ),
+    );
+  }
+
+  createProfile(user: Principal, input: z.infer<typeof CreateProfile>) {
+    return this.db.tx(user.tenantId, (q) =>
+      q.one<ProfileRow>(
+        `INSERT INTO sensor_profiles (tenant_id, key, name, device_type, expected_interval_seconds, sensors, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING ${PROFILE_COLUMNS}`,
+        [user.tenantId, input.key, input.name, input.device_type, input.expected_interval_seconds, JSON.stringify(input.sensors), user.username],
+      ),
+    );
+  }
+
+  /** Every metric a device of this tenant can report: kind and unit, from profiles and registered sensors. */
+  metricTypes(user: Principal) {
+    return this.db.tx(user.tenantId, (q) =>
+      q.query(
+        `WITH from_profiles AS (
+           SELECT s->>'kind' AS kind, s->>'unit' AS unit, s->>'label' AS label, p.key AS profile_key
+             FROM sensor_profiles p, jsonb_array_elements(p.sensors) s
+         ), from_devices AS (
+           SELECT kind, unit, count(*)::int AS sensors FROM sensors GROUP BY kind, unit
+         )
+         SELECT COALESCE(fp.kind, fd.kind) AS kind, COALESCE(fp.unit, fd.unit) AS unit, max(fp.label) AS label,
+                COALESCE(array_agg(DISTINCT fp.profile_key) FILTER (WHERE fp.profile_key IS NOT NULL), '{}') AS profiles,
+                COALESCE(max(fd.sensors), 0) AS sensors
+           FROM from_profiles fp FULL JOIN from_devices fd ON fd.kind = fp.kind AND fd.unit = fp.unit
+          GROUP BY 1, 2 ORDER BY 1, 2`,
+      ),
+    );
+  }
+
+  /** Installs the sensor profiles of an industry pack. Idempotent; a profile a person created is left alone. */
+  private async installPackProfiles(event: EventEnvelope, q: Q): Promise<void> {
+    const p = event.payload as EventPayload<'tenant.pack.activated.v1'>;
+    for (const raw of p.install.sensor_profiles) {
+      const profile = PackSensorProfile.parse(raw);
+      const existing = await q.maybeOne<ProfileRow>(`SELECT ${PROFILE_COLUMNS} FROM sensor_profiles WHERE key = $1 FOR UPDATE`, [profile.key]);
+      if (!existing) {
+        await q.exec(
+          `INSERT INTO sensor_profiles (tenant_id, key, name, device_type, expected_interval_seconds, sensors, pack_id, created_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [event.tenant_id, profile.key, profile.name, profile.device_type, profile.expected_interval_seconds, JSON.stringify(profile.sensors), p.pack_id, packActor(p.pack_id, p.version)],
+        );
+        continue;
+      }
+      if (existing.pack_id !== p.pack_id) continue;
+      const same =
+        existing.name === profile.name &&
+        existing.device_type === profile.device_type &&
+        existing.expected_interval_seconds === profile.expected_interval_seconds &&
+        canonicalJson(existing.sensors) === canonicalJson(profile.sensors);
+      if (same) continue;
+      // Devices already registered keep the sensors they were registered with.
+      await q.exec(
+        `UPDATE sensor_profiles SET name = $2, device_type = $3, expected_interval_seconds = $4, sensors = $5, version = version + 1, updated_at = now() WHERE id = $1`,
+        [existing.id, profile.name, profile.device_type, profile.expected_interval_seconds, JSON.stringify(profile.sensors)],
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Devices
+  // ---------------------------------------------------------------------------
+
+  register(user: Principal, body: z.infer<typeof RegisterDevice>) {
     return this.db.tx(user.tenantId, async (q) => {
+      let profile: ProfileRow | null = null;
+      if (body.profile_key) {
+        profile = await q.maybeOne<ProfileRow>(`SELECT ${PROFILE_COLUMNS} FROM sensor_profiles WHERE key = $1`, [body.profile_key]);
+        if (!profile) throw DomainError.invalid(`unknown sensor profile '${body.profile_key}'`);
+      }
+      // Explicit values win over the profile's.
+      const input = {
+        ...body,
+        device_type: body.device_type ?? profile!.device_type,
+        expected_interval_seconds: body.expected_interval_seconds ?? profile?.expected_interval_seconds ?? 30,
+        sensors: body.sensors.length ? body.sensors : profile!.sensors.map((s) => ({ kind: s.kind, unit: s.unit, min_valid: s.min_valid, max_valid: s.max_valid })),
+      };
       const device = await q.one<DeviceRow>(
-        `INSERT INTO devices (tenant_id, serial_no, name, device_type, asset_id, latitude, longitude, expected_interval_seconds, config)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING ${COLUMNS}`,
+        `INSERT INTO devices (tenant_id, serial_no, name, device_type, asset_id, latitude, longitude, expected_interval_seconds, config, profile_key)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING ${COLUMNS}`,
         [
           user.tenantId,
           input.serial_no,
@@ -100,6 +224,7 @@ export class DeviceService implements OnApplicationBootstrap, OnApplicationShutd
           input.longitude,
           input.expected_interval_seconds,
           JSON.stringify(input.config),
+          profile?.key ?? null,
         ],
       );
       for (const s of input.sensors) {
@@ -147,9 +272,12 @@ export class DeviceService implements OnApplicationBootstrap, OnApplicationShutd
                    FROM sensors s WHERE s.device_id = devices.id) AS sensors
            FROM devices
           WHERE ($1::text IS NULL OR status = $1)
+            AND ($3::text IS NULL OR device_type = $3)
+            AND ($4::text IS NULL OR profile_key = $4)
+            AND ($5::uuid IS NULL OR asset_id = $5)
           ORDER BY name
           LIMIT $2`,
-        [query.status ?? null, query.limit],
+        [query.status ?? null, query.limit, query.device_type ?? null, query.profile_key ?? null, query.asset_id ?? null],
       ),
     );
   }
