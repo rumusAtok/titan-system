@@ -25,9 +25,11 @@ export const SUBJECT_TYPES = [
   { key: 'service_request', label: 'Service request', owner: 'maintenance-service', supportsReturn: false },
   { key: 'work_order', label: 'Work order', owner: null, supportsReturn: false },
   { key: 'inspection', label: 'Inspection', owner: null, supportsReturn: false },
-  { key: 'purchase_request', label: 'Purchase request', owner: null, supportsReturn: false },
+  { key: 'purchase_request', label: 'Purchase request', owner: 'procurement-service', supportsReturn: false },
   { key: 'quality_deviation', label: 'Quality deviation', owner: null, supportsReturn: false },
   { key: 'contract', label: 'Contract', owner: null, supportsReturn: false },
+  // A controlled document version submitted for review before it is published.
+  { key: 'document', label: 'Document review', owner: 'document-service', supportsReturn: false },
 ] as const satisfies readonly SubjectTypeInfo[];
 
 export type SubjectType = (typeof SUBJECT_TYPES)[number]['key'];

@@ -1,0 +1,547 @@
+{
+  "components": {
+    "schemas": {},
+    "securitySchemes": {
+      "bearer": {
+        "bearerFormat": "JWT",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "contact": {},
+    "description": "Camera register, audited viewing sessions, recording metadata (clips stay in the external VMS) with retention and legal hold, and incident markers. No video is stored or analysed.",
+    "title": "TITAN video-service",
+    "version": "0.1.0"
+  },
+  "openapi": "3.0.0",
+  "paths": {
+    "/cameras": {
+      "get": {
+        "operationId": "VideoController_cameras",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Camera register (stream URLs are not listed)",
+        "tags": [
+          "video"
+        ]
+      },
+      "post": {
+        "operationId": "VideoController_register",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "asset_id": {
+                    "default": null,
+                    "format": "uuid",
+                    "nullable": true,
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "type": "string"
+                  },
+                  "code": {
+                    "pattern": "^[A-Z0-9][A-Z0-9_-]{1,31}$",
+                    "type": "string"
+                  },
+                  "latitude": {
+                    "default": null,
+                    "maximum": 90,
+                    "minimum": -90,
+                    "nullable": true,
+                    "type": "number"
+                  },
+                  "location_note": {
+                    "default": "",
+                    "maxLength": 300,
+                    "type": "string"
+                  },
+                  "longitude": {
+                    "default": null,
+                    "maximum": 180,
+                    "minimum": -180,
+                    "nullable": true,
+                    "type": "number"
+                  },
+                  "name": {
+                    "maxLength": 120,
+                    "minLength": 2,
+                    "type": "string"
+                  },
+                  "privacy_masking": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "retention_days": {
+                    "default": 30,
+                    "maximum": 3650,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "stream_url": {
+                    "default": null,
+                    "maxLength": 500,
+                    "nullable": true,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "code",
+                  "name"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "video"
+        ]
+      }
+    },
+    "/cameras/{id}": {
+      "get": {
+        "operationId": "VideoController_camera",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "A camera with its recordings, markers and recent viewing sessions",
+        "tags": [
+          "video"
+        ]
+      },
+      "patch": {
+        "operationId": "VideoController_update",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "expected_version": {
+                    "exclusiveMinimum": true,
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "location_note": {
+                    "maxLength": 300,
+                    "type": "string"
+                  },
+                  "name": {
+                    "maxLength": 120,
+                    "minLength": 2,
+                    "type": "string"
+                  },
+                  "privacy_masking": {
+                    "type": "boolean"
+                  },
+                  "retention_days": {
+                    "maximum": 3650,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "stream_url": {
+                    "maxLength": 500,
+                    "nullable": true,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "expected_version"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Change a camera: name, location, stream URL (no credentials), retention, privacy masking",
+        "tags": [
+          "video"
+        ]
+      }
+    },
+    "/cameras/{id}/markers": {
+      "post": {
+        "operationId": "VideoController_marker",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "at": {
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+                    "type": "string"
+                  },
+                  "incident_id": {
+                    "default": null,
+                    "format": "uuid",
+                    "nullable": true,
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "type": "string"
+                  },
+                  "label": {
+                    "maxLength": 120,
+                    "minLength": 2,
+                    "type": "string"
+                  },
+                  "note": {
+                    "default": "",
+                    "maxLength": 1000,
+                    "type": "string"
+                  },
+                  "recording_id": {
+                    "default": null,
+                    "format": "uuid",
+                    "nullable": true,
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "at",
+                  "label"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Mark a moment (optionally in a recording, optionally for an incident); the incident timeline records it",
+        "tags": [
+          "video"
+        ]
+      }
+    },
+    "/cameras/{id}/recordings": {
+      "post": {
+        "operationId": "VideoController_recording",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "ended_at": {
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+                    "type": "string"
+                  },
+                  "size_bytes": {
+                    "default": null,
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "nullable": true,
+                    "type": "integer"
+                  },
+                  "started_at": {
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+                    "type": "string"
+                  },
+                  "storage_ref": {
+                    "default": null,
+                    "maxLength": 300,
+                    "nullable": true,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "started_at",
+                  "ended_at"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Register a recording segment held by the external video management system (metadata only)",
+        "tags": [
+          "video"
+        ]
+      }
+    },
+    "/cameras/{id}/sessions": {
+      "post": {
+        "operationId": "VideoController_startSession",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "incident_id": {
+                    "default": null,
+                    "format": "uuid",
+                    "nullable": true,
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "type": "string"
+                  },
+                  "purpose": {
+                    "maxLength": 300,
+                    "minLength": 5,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "purpose"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Open a viewing session: states a purpose, is logged and audited, and returns the stream URL for the viewer's player",
+        "tags": [
+          "video"
+        ]
+      }
+    },
+    "/cameras/{id}/status": {
+      "post": {
+        "operationId": "VideoController_status",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "note": {
+                    "default": "",
+                    "maxLength": 300,
+                    "type": "string"
+                  },
+                  "status": {
+                    "enum": [
+                      "online",
+                      "offline",
+                      "maintenance",
+                      "decommissioned"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "status"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "video"
+        ]
+      }
+    },
+    "/incidents": {
+      "get": {
+        "operationId": "VideoController_incidents",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Recent incidents a marker can refer to",
+        "tags": [
+          "video"
+        ]
+      }
+    },
+    "/incidents/{id}/markers": {
+      "get": {
+        "operationId": "VideoController_incidentMarkers",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "video"
+        ]
+      }
+    },
+    "/recordings/{id}/legal-hold": {
+      "post": {
+        "operationId": "VideoController_legalHold",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "legal_hold": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "legal_hold"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "video"
+        ]
+      }
+    },
+    "/sessions": {
+      "get": {
+        "operationId": "VideoController_sessions",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Viewing log: who opened which camera, when and why",
+        "tags": [
+          "video"
+        ]
+      }
+    },
+    "/sessions/{id}/end": {
+      "post": {
+        "operationId": "VideoController_endSession",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "video"
+        ]
+      }
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    }
+  ],
+  "servers": [],
+  "tags": []
+}

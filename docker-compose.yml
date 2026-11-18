@@ -204,6 +204,8 @@ services:
       TITAN_GATEWAY_URL: http://localhost:${GATEWAY_HOST_PORT}
       TITAN_KEYCLOAK_URL: ${KEYCLOAK_PUBLIC_URL}
       TITAN_ENVIRONMENT: local-development
+      # The camera page may play HLS from the local video test server.
+      TITAN_VIDEO_ORIGIN: http://localhost:${VIDEO_HOST_PORT:-8888}
       # Map background tiles; empty = public OpenStreetMap server, "none" = no external requests.
       TITAN_MAP_TILE_URL: ${MAP_TILE_URL:-}
     ports:
@@ -271,8 +273,24 @@ services:
       DB_APP_ROLE: notification_app
       DATABASE_URL: postgres://notification_app:${DB_DEV_PASSWORD}_notification_app@${DB_HOST:-postgres}:5432/titan_notification
       DATABASE_OWNER_URL: postgres://notification_owner:${DB_DEV_PASSWORD}_notification_owner@${DB_HOST:-postgres}:5432/titan_notification
-      # "log" records the message instead of sending it. No real e-mail leaves this stack.
-      EMAIL_ADAPTER: log
+      # "mailpit" delivers by SMTP to the local catcher below (read it at http://localhost:8025);
+      # "log" only records the message. No real e-mail leaves this stack: the adapter refuses other hosts.
+      EMAIL_ADAPTER: ${EMAIL_ADAPTER:-mailpit}
+      MAIL_CATCHER_HOST: mailpit
+      MAIL_CATCHER_PORT: "1025"
+
+  # Local mail catcher: accepts every message, delivers none, shows them in a web inbox.
+  mailpit:
+    image: axllent/mailpit:v1.21.0
+    restart: unless-stopped
+    networks: [titan]
+    profiles: [core]
+    ports:
+      - "127.0.0.1:${MAILPIT_HOST_PORT:-8025}:8025"
+    environment:
+      MP_MAX_MESSAGES: "2000"
+    mem_limit: 128m
+    security_opt: ["no-new-privileges:true"]
 
   audit-service:
     <<: *node-service
@@ -340,6 +358,165 @@ services:
       DB_APP_ROLE: maintenance_app
       DATABASE_URL: postgres://maintenance_app:${DB_DEV_PASSWORD}_maintenance_app@${DB_HOST:-postgres}:5432/titan_maintenance
       DATABASE_OWNER_URL: postgres://maintenance_owner:${DB_DEV_PASSWORD}_maintenance_owner@${DB_HOST:-postgres}:5432/titan_maintenance
+      # How often preventive and inspection plans are checked (development: 15 s).
+      MAINTENANCE_PLAN_SWEEP_MS: ${MAINTENANCE_PLAN_SWEEP_MS:-15000}
+
+  # Universal core (no capability needed): controlled documents and geospatial zones.
+  document-service:
+    <<: *node-service
+    image: titan/document-service:dev
+    build:
+      <<: *node-build
+      args:
+        SERVICE_PATH: services/document-service
+    profiles: [core]
+    depends_on: &ensured-db
+      postgres:
+        condition: service_healthy
+      postgres-ensure:
+        condition: service_completed_successfully
+    environment:
+      <<: *node-env
+      SERVICE_NAME: document-service
+      DB_APP_ROLE: document_app
+      DATABASE_URL: postgres://document_app:${DB_DEV_PASSWORD}_document_app@${DB_HOST:-postgres}:5432/titan_document
+      DATABASE_OWNER_URL: postgres://document_owner:${DB_DEV_PASSWORD}_document_owner@${DB_HOST:-postgres}:5432/titan_document
+      # Set CLAMAV_HOST=clamav (and start the "scan" profile) to scan every upload with ClamAV.
+      # When set, an unreachable scanner refuses uploads (fail closed).
+      CLAMAV_HOST: ${CLAMAV_HOST:-}
+      CLAMAV_PORT: "3310"
+
+  # Optional antivirus daemon for document uploads (profile "scan"). At start it downloads virus
+  # signatures from the ClamAV project (database.clamav.net); no document content leaves the stack.
+  clamav:
+    image: clamav/clamav:1.4.3
+    restart: unless-stopped
+    networks: [titan]
+    profiles: [scan]
+    mem_limit: 1536m
+    volumes:
+      - clamav-data:/var/lib/clamav
+    healthcheck:
+      test: ["CMD-SHELL", "echo PING | nc -w 2 127.0.0.1 3310 | grep -q PONG"]
+      interval: 15s
+      timeout: 5s
+      retries: 40
+
+  geospatial-service:
+    <<: *node-service
+    image: titan/geospatial-service:dev
+    build:
+      <<: *node-build
+      args:
+        SERVICE_PATH: services/geospatial-service
+    profiles: [core]
+    depends_on: *ensured-db
+    environment:
+      <<: *node-env
+      SERVICE_NAME: geospatial-service
+      DB_APP_ROLE: geo_app
+      DATABASE_URL: postgres://geo_app:${DB_DEV_PASSWORD}_geo_app@${DB_HOST:-postgres}:5432/titan_geo
+      DATABASE_OWNER_URL: postgres://geo_owner:${DB_DEV_PASSWORD}_geo_owner@${DB_HOST:-postgres}:5432/titan_geo
+
+  # Switchable capabilities (layer B): procurement, reporting, integrations, video.
+  procurement-service:
+    <<: *node-service
+    image: titan/procurement-service:dev
+    build:
+      <<: *node-build
+      args:
+        SERVICE_PATH: services/procurement-service
+    profiles: [core]
+    depends_on: *ensured-db
+    environment:
+      <<: *node-env
+      SERVICE_NAME: procurement-service
+      DB_APP_ROLE: procurement_app
+      DATABASE_URL: postgres://procurement_app:${DB_DEV_PASSWORD}_procurement_app@${DB_HOST:-postgres}:5432/titan_procurement
+      DATABASE_OWNER_URL: postgres://procurement_owner:${DB_DEV_PASSWORD}_procurement_owner@${DB_HOST:-postgres}:5432/titan_procurement
+
+  report-service:
+    <<: *node-service
+    image: titan/report-service:dev
+    build:
+      <<: *node-build
+      args:
+        SERVICE_PATH: services/report-service
+    profiles: [core]
+    depends_on: *ensured-db
+    environment:
+      <<: *node-env
+      SERVICE_NAME: report-service
+      DB_APP_ROLE: report_app
+      DATABASE_URL: postgres://report_app:${DB_DEV_PASSWORD}_report_app@${DB_HOST:-postgres}:5432/titan_report
+      DATABASE_OWNER_URL: postgres://report_owner:${DB_DEV_PASSWORD}_report_owner@${DB_HOST:-postgres}:5432/titan_report
+      # Datasets are read with the requesting user's token (analytics profile).
+      ANALYTICS_URL: http://analytics-service:8000
+
+  integration-service:
+    <<: *node-service
+    image: titan/integration-service:dev
+    build:
+      <<: *node-build
+      args:
+        SERVICE_PATH: services/integration-service
+    profiles: [core]
+    depends_on: *ensured-db
+    environment:
+      <<: *node-env
+      SERVICE_NAME: integration-service
+      DB_APP_ROLE: integration_app
+      DATABASE_URL: postgres://integration_app:${DB_DEV_PASSWORD}_integration_app@${DB_HOST:-postgres}:5432/titan_integration
+      DATABASE_OWNER_URL: postgres://integration_owner:${DB_DEV_PASSWORD}_integration_owner@${DB_HOST:-postgres}:5432/titan_integration
+      INTEGRATION_SECRET_KEY: ${INTEGRATION_SECRET_KEY}
+      # Outbound webhooks go ONLY to these hosts. The default is the local test receiver below.
+      WEBHOOK_ALLOWED_HOSTS: ${WEBHOOK_ALLOWED_HOSTS:-webhook-sink}
+
+  # Local test receiver for outbound webhooks: records what it receives, sends nothing anywhere.
+  webhook-sink:
+    image: node:22-alpine
+    restart: unless-stopped
+    networks: [titan]
+    profiles: [core]
+    command: ["node", "/sink/server.mjs"]
+    ports:
+      # Loopback only: lets the integration tests read what was received.
+      - "127.0.0.1:${WEBHOOK_SINK_HOST_PORT:-8099}:8080"
+    volumes:
+      - ./infrastructure/docker/webhook-sink:/sink:ro
+    read_only: true
+    mem_limit: 64m
+    security_opt: ["no-new-privileges:true"]
+
+  # Local video test server: synthetic test-pattern streams for the camera module (HLS on 8888).
+  video-lab:
+    image: bluenviron/mediamtx:1.9.3-ffmpeg
+    restart: unless-stopped
+    networks: [titan]
+    profiles: [core]
+    volumes:
+      - ./infrastructure/docker/mediamtx/mediamtx.yml:/mediamtx.yml:ro
+    ports:
+      - "127.0.0.1:${VIDEO_HOST_PORT:-8888}:8888"
+    mem_limit: 256m
+    cpus: 0.5
+    security_opt: ["no-new-privileges:true"]
+
+  video-service:
+    <<: *node-service
+    image: titan/video-service:dev
+    build:
+      <<: *node-build
+      args:
+        SERVICE_PATH: services/video-service
+    profiles: [core]
+    depends_on: *ensured-db
+    environment:
+      <<: *node-env
+      SERVICE_NAME: video-service
+      DB_APP_ROLE: video_app
+      DATABASE_URL: postgres://video_app:${DB_DEV_PASSWORD}_video_app@${DB_HOST:-postgres}:5432/titan_video
+      DATABASE_OWNER_URL: postgres://video_owner:${DB_DEV_PASSWORD}_video_owner@${DB_HOST:-postgres}:5432/titan_video
 
   # ---------------------------------------------- intelligent infrastructure
   mosquitto:
@@ -444,11 +621,14 @@ services:
       ANALYTICS_URL: http://analytics-service:8000
       LAKE_DIR: /lake
       PIPELINE_INTERVAL_SECONDS: ${PIPELINE_INTERVAL_SECONDS:-30}
+      # Bounded batches keep memory flat however large the backlog is (lab default).
+      PIPELINE_MAX_EVENTS_PER_RUN: ${PIPELINE_MAX_EVENTS_PER_RUN:-50000}
       # Development aid: allows POST /runs {"simulate_failure": true}.
       PIPELINE_ALLOW_FAULT_INJECTION: "true"
     volumes:
       - lake:/lake
-    mem_limit: 768m
+    # Raised from 768m on 2026-11-18: runs over ~1.9M bronze events exhausted 768 MiB (see the verification report).
+    mem_limit: 1536m
     security_opt: ["no-new-privileges:true"]
 
   analytics-service:
@@ -605,6 +785,19 @@ services:
       - prometheus-data:/prometheus
     mem_limit: 512m
 
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    restart: unless-stopped
+    networks: [titan]
+    profiles: [observability]
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml", "--storage.path=/alertmanager"]
+    ports:
+      - "127.0.0.1:${ALERTMANAGER_HOST_PORT:-9093}:9093"
+    volumes:
+      - ./infrastructure/monitoring/alertmanager:/etc/alertmanager:ro
+    mem_limit: 128m
+    security_opt: ["no-new-privileges:true"]
+
   loki:
     image: grafana/loki:3.5.0
     restart: unless-stopped
@@ -726,6 +919,7 @@ networks:
     name: titan-dr
 
 volumes:
+  clamav-data:
   postgres-data:
   postgres-wal-archive:
   nats-data:

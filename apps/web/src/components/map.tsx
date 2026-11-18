@@ -37,7 +37,14 @@ export function toneOf(f: MapFeature): string {
  * The base map is an external raster tile service (configurable, and can be
  * switched off). Without tiles the markers are drawn on a plain background.
  */
-export function OperationsMap({ features, selectedId, onSelect }: { features: MapFeature[]; selectedId: string | null; onSelect: (id: string | null) => void }) {
+export interface MapZone {
+  code: string;
+  name: string;
+  geometry: { type: string; coordinates: unknown };
+  watch_incidents: boolean;
+}
+
+export function OperationsMap({ features, selectedId, onSelect, zones = [] }: { features: MapFeature[]; selectedId: string | null; onSelect: (id: string | null) => void; zones?: MapZone[] }) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const select = useRef(onSelect);
@@ -50,6 +57,7 @@ export function OperationsMap({ features, selectedId, onSelect }: { features: Ma
     const tileUrl = getConfig().mapTileUrl;
     const sources: maplibregl.StyleSpecification['sources'] = {
       features: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+      zones: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
     };
     const baseLayers: maplibregl.LayerSpecification[] = [];
     if (tileUrl) {
@@ -65,6 +73,8 @@ export function OperationsMap({ features, selectedId, onSelect }: { features: Ma
         layers: [
           { id: 'background', type: 'background', paint: { 'background-color': '#e8edf3' } },
           ...baseLayers,
+          { id: 'zones-fill', type: 'fill', source: 'zones', paint: { 'fill-color': ['case', ['get', 'watch'], '#0369a1', '#64748b'], 'fill-opacity': 0.12 } },
+          { id: 'zones-line', type: 'line', source: 'zones', paint: { 'line-color': '#0369a1', 'line-width': 1.5, 'line-dasharray': [2, 1] } },
           {
             id: 'incident-halo', type: 'circle', source: 'features', filter: ['==', ['get', 'kind'], 'incident'],
             paint: { 'circle-radius': 20, 'circle-color': '#b91c1c', 'circle-opacity': 0.22, 'circle-stroke-color': '#b91c1c', 'circle-stroke-width': 1.5 },
@@ -125,6 +135,18 @@ export function OperationsMap({ features, selectedId, onSelect }: { features: Ma
     if (instance.isStyleLoaded()) apply();
     else instance.once('load', apply);
   }, [features, selectedId]);
+
+  useEffect(() => {
+    const instance = map.current;
+    if (!instance) return;
+    const apply = () =>
+      (instance.getSource('zones') as maplibregl.GeoJSONSource | undefined)?.setData({
+        type: 'FeatureCollection',
+        features: zones.map((z) => ({ type: 'Feature', geometry: z.geometry as never, properties: { code: z.code, name: z.name, watch: z.watch_incidents } })),
+      });
+    if (instance.isStyleLoaded()) apply();
+    else instance.once('load', apply);
+  }, [zones]);
 
   return <div ref={container} className="h-full min-h-[420px] w-full rounded-b-lg" role="application" aria-label="Map of assets, sensors and incidents. The same records are listed in the table beside the map." />;
 }

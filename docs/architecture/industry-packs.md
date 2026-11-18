@@ -9,21 +9,24 @@ states plainly what is not.
 ```mermaid
 flowchart TB
   subgraph C[Layer C: industry packs - declarative manifests, no code]
-    P1[platform-core 1.0.0]
+    P1[platform-core 1.0.0 / 1.1.0 / 1.2.0]
     P2[public-services 1.0.0]
     P3[disaster-infrastructure 1.0.0]
     P4[manufacturing 1.0.0 / 1.1.0]
     P5[facilities 1.0.0]
+    P6[procurement-inventory 1.0.0 / 1.1.0, operational-reporting, integration-hub, video-monitoring 1.0.0]
   end
   subgraph B[Layer B: reusable business capabilities - switched on per tenant]
     B1[case_management: case-service]
     B2[iot: device, telemetry, alert services]
     B3[maintenance: maintenance-service]
+    B4[procurement / reporting / integrations / video: their own services]
   end
   subgraph A[Layer A: universal core - every tenant]
     A1[tenancy and entitlements: tenant-service]
     A2[workflow] --- A3[incidents] --- A4[assets] --- A5[notifications] --- A6[audit]
     A7[analytics and pipeline] --- A8[AI assistant] --- A9[observability and DR]
+    A10[documents] --- A11[zones and map layers]
   end
   C -->|activate: capabilities + templates| B
   C -->|templates: workflows, categories, dashboards| A
@@ -31,12 +34,13 @@ flowchart TB
 
 | Layer | What | Where |
 | --- | --- | --- |
-| A. Universal core | Identity and tenancy, sites, entitlements, workflow, incidents, assets, notifications, audit, analytics, AI, observability, recovery | Every tenant; cannot be switched off |
-| B. Business capabilities | `case_management`, `iot`, `maintenance` | Switched on per tenant by packs; enforced by the owning service |
+| A. Universal core | Identity and tenancy, sites, entitlements, workflow, incidents, assets, controlled documents, zones, notifications, audit, analytics, AI, observability, recovery | Every tenant; cannot be switched off |
+| B. Business capabilities | `case_management`, `iot`, `maintenance`, `procurement`, `reporting`, `integrations`, `video` | Switched on per tenant by packs; enforced by the owning service |
 | C. Industry packs | Versioned JSON manifests in `services/tenant-service/packs/<id>/<version>.json` | Activated, configured, upgraded and deactivated per tenant |
 
 Capabilities and their owning services are listed in `packages/contracts/src/capabilities.ts`.
-Inspection, procurement and reporting from the directive's layer B are **not implemented**:
+Procurement, reporting, integrations and video were added after v3 (ADR-0015); inspection
+scheduling is still **not implemented**:
 inspection findings are a request type of the facilities pack; `inspection`, `purchase_request`,
 `work_order`, `quality_deviation` and `contract` are registered workflow subject types with no
 owning service yet.
@@ -134,6 +138,16 @@ permissions: every role applies to the whole tenant.
 | manufacturing | Machine → vibration and temperature telemetry → alarm → equipment incident → automatic repair request → supervisor and planning approval → work order → completion → machine condition and incident timeline → KPI datasets | `tests/integration/manufacturing.test.ts` |
 | facilities | Building → service request or inspection finding → configurable approval (budget stage from 5000) → assigned work → completion → asset back in service, requester notified. No device involved | `tests/integration/facilities.test.ts` |
 
+| procurement-inventory | Purchase request → procurement review (and budget approval from 5000) → purchase order → partial and full goods receipt → stock; stock issue to the reorder level → one automatic replenishment request | `tests/integration/procurement.test.ts` |
+| operational-reporting | Definition over registered datasets → generated with the reader's own access → CSV and printable HTML | `tests/integration/integrations-reports-video.test.ts` |
+| integration-hub | Signed webhook → external incident (deduplicated); subscribed event → signed delivery to the local test receiver; refusal and retry | same |
+| video-monitoring | Camera → purpose-logged viewing session → incident marker on the incident timeline; recording retention and legal hold | same |
+| platform-core 1.1.0 | Document upload → review by the records manager → published version; legal hold and disposal; zones and incidents located in them | `tests/integration/documents-geo.test.ts` |
+
+The seed upgrades every tenant's platform core to 1.2.0 (digital twin menu entry) and procurement-inventory to 1.1.0 (over-budget approval stage), along declared upgrade paths, and gives
+Riverbend and Meridian the four module packs; Northfield and Harbourline do not have them (used
+for capability refusal tests).
+
 Tenants: Riverbend and Northfield (public services + flood), Meridian Industrial Group
 (manufacturing + facilities in one tenant), Harbourline Properties (facilities; used for the
 lifecycle tests). All synthetic.
@@ -142,6 +156,6 @@ lifecycle tests). All synthetic.
 
 - Uploading or authoring packs: the catalogue is the manifests shipped with tenant-service.
 - Per-site permissions, and roles created by a pack in Keycloak (packs describe roles only).
-- Inventory, procurement, inspection scheduling and report services.
+- Inspection scheduling; supplier-facing procurement; report scheduling without a person (see ADR-0015).
 - Removing what a deactivated pack installed (deliberately: nothing is deleted).
 - Pack dependencies other than on `platform-core` are supported by the code but not used.

@@ -23,6 +23,8 @@ export default function GisPage() {
   const devices = useQuery({ queryKey: ['devices'], queryFn: () => api<any[]>('/api/device/devices'), refetchInterval: 15_000 });
   const incidents = useQuery({ queryKey: ['incidents', 'active'], queryFn: () => api<any[]>('/api/incident/incidents?status=active&limit=200'), refetchInterval: 15_000 });
   const latest = useQuery({ queryKey: ['telemetry', 'latest'], queryFn: () => api<any[]>('/api/telemetry/latest'), refetchInterval: 10_000, retry: false });
+  // Zones (geospatial, universal core), drawn under the points.
+  const zones = useQuery({ queryKey: ['geo', 'zones'], queryFn: () => api<any[]>('/api/geo/zones'), retry: false });
 
   const all = useMemo(() => {
     const out: Array<MapFeature & { record: any }> = [];
@@ -74,7 +76,7 @@ export default function GisPage() {
         >
           {loading ? <Spinner /> : failed ? <ErrorState error={assets.error} onRetry={() => { void assets.refetch(); void devices.refetch(); }} what="Map data" /> : (
             <div className="h-[520px]">
-              <OperationsMap features={visible} selectedId={selectedId} onSelect={setSelectedId} />
+              <OperationsMap features={visible} selectedId={selectedId} onSelect={setSelectedId} zones={zones.data ?? []} />
             </div>
           )}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line px-4 py-2 text-xs text-ink-muted">

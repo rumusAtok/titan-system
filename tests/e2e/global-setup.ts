@@ -7,13 +7,15 @@ import net from 'node:net';
  *
  * When the tests run inside the Playwright container (TITAN_E2E_FORWARD=1),
  * "localhost" is the container itself, so plain TCP forwarders expose the
- * same three ports there and relay to the compose services. The browser then
+ * same ports there and relay to the compose services. The browser then
  * uses exactly the URLs a person would.
  */
 const FORWARDS: Array<[number, string, number]> = [
   [3000, 'web', 8080],
   [8080, 'gateway', 3000],
   [8081, 'keycloak', 8080],
+  // Local video test server (HLS) for the camera page.
+  [8888, 'video-lab', 8888],
 ];
 
 export default async function globalSetup(): Promise<() => Promise<void>> {

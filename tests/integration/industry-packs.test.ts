@@ -17,7 +17,7 @@ after(closeConnections);
 describe('Pack catalogue', () => {
   it('lists the shipped packs with versions, capabilities and contents', async () => {
     const catalog = await api('adam.admin', 'GET', '/api/tenant/packs/catalog');
-    assert.deepEqual(catalog.map((p: any) => p.id), ['disaster-infrastructure', 'facilities', 'manufacturing', 'platform-core', 'public-services']);
+    assert.deepEqual(catalog.map((p: any) => p.id), ['disaster-infrastructure', 'facilities', 'integration-hub', 'manufacturing', 'operational-reporting', 'platform-core', 'procurement-inventory', 'public-services', 'video-monitoring']);
     const manufacturing = catalog.find((p: any) => p.id === 'manufacturing');
     assert.deepEqual(manufacturing.versions.map((v: any) => v.version), ['1.0.0', '1.1.0']);
     assert.equal(manufacturing.latest_version, '1.1.0');
@@ -37,7 +37,7 @@ describe('Pack catalogue', () => {
 
   it('describes the platform layers and the controlled registry of workflow subject types', async () => {
     const platform = await api('adam.admin', 'GET', '/api/tenant/platform/capabilities');
-    assert.deepEqual(platform.capabilities.filter((c: any) => c.layer === 'capability').map((c: any) => c.key).sort(), ['case_management', 'iot', 'maintenance']);
+    assert.deepEqual(platform.capabilities.filter((c: any) => c.layer === 'capability').map((c: any) => c.key).sort(), ['case_management', 'integrations', 'iot', 'maintenance', 'procurement', 'reporting', 'video']);
     const registered = (await api('adam.admin', 'GET', '/api/workflow/subject-types')).map((s: any) => s.key).sort();
     assert.deepEqual(registered, platform.workflow_subject_types.map((s: any) => s.key).sort(), 'the database registry and the contract registry agree');
     assert.ok(['case', 'incident', 'maintenance_request', 'service_request', 'work_order', 'inspection', 'purchase_request', 'quality_deviation', 'contract'].every((k) => registered.includes(k)));
@@ -46,19 +46,20 @@ describe('Pack catalogue', () => {
 
 describe('Different tenants, different packs', () => {
   it('the existing government and flood tenants were given the packs that carry what they already used', async () => {
-    for (const admin of ['adam.admin', 'brian.admin']) {
-      const packs = (await api(admin, 'GET', '/api/tenant/packs')).filter((p: any) => p.status === 'active').map((p: any) => p.pack_id).sort();
-      assert.deepEqual(packs, ['disaster-infrastructure', 'platform-core', 'public-services']);
-      assert.deepEqual(await capabilities(admin), ['case_management', 'iot']);
-    }
+    const active = async (admin: string) => (await api(admin, 'GET', '/api/tenant/packs')).filter((p: any) => p.status === 'active').map((p: any) => p.pack_id).sort();
+    assert.deepEqual(await active('brian.admin'), ['disaster-infrastructure', 'platform-core', 'public-services']);
+    assert.deepEqual(await capabilities('brian.admin'), ['case_management', 'iot']);
+    // Riverbend also runs the cross-industry modules added after v3 (seeded).
+    assert.deepEqual(await active('adam.admin'), ['disaster-infrastructure', 'integration-hub', 'operational-reporting', 'platform-core', 'procurement-inventory', 'public-services', 'video-monitoring']);
+    assert.deepEqual(await capabilities('adam.admin'), ['case_management', 'integrations', 'iot', 'procurement', 'reporting', 'video']);
   });
 
   it('one tenant runs two industry packs at once', async () => {
     const packs = (await api('maya.admin', 'GET', '/api/tenant/packs')).filter((p: any) => p.status === 'active').map((p: any) => p.pack_id).sort();
-    assert.deepEqual(packs, ['facilities', 'manufacturing', 'platform-core']);
-    assert.deepEqual(await capabilities('maya.admin'), ['iot', 'maintenance']);
+    assert.deepEqual(packs, ['facilities', 'integration-hub', 'manufacturing', 'operational-reporting', 'platform-core', 'procurement-inventory', 'video-monitoring']);
+    assert.deepEqual(await capabilities('maya.admin'), ['integrations', 'iot', 'maintenance', 'procurement', 'reporting', 'video']);
     const workspace = await api('maya.admin', 'GET', '/api/tenant/workspace');
-    assert.deepEqual(workspace.workspaces.map((w: any) => w.id), ['all', 'facilities', 'manufacturing']);
+    assert.deepEqual(workspace.workspaces.map((w: any) => w.id).sort(), ['all', 'facilities', 'integration-hub', 'manufacturing', 'operational-reporting', 'procurement-inventory', 'video-monitoring']);
     assert.deepEqual(workspace.dashboards.map((d: any) => `${d.pack_id}:${d.key}`).sort(), ['facilities:facilities', 'manufacturing:manufacturing', 'platform-core:operations']);
   });
 
@@ -66,7 +67,10 @@ describe('Different tenants, different packs', () => {
     const own = await api('maya.admin', 'GET', '/api/tenant/entitlements');
     assert.equal(own.tenant_id, TENANT_C);
     const history = await api('maya.admin', 'GET', '/api/tenant/packs/history');
-    assert.ok(history.length >= 3 && history.every((h: any) => ['platform-core', 'manufacturing', 'facilities'].includes(h.pack_id)));
+    assert.ok(history.length >= 3);
+    // disaster-infrastructure has only ever been active for the government tenants: none of their rows may appear here.
+    assert.ok(!history.some((h: any) => h.pack_id === 'disaster-infrastructure'), 'the pack history of another tenant is visible');
+    assert.ok(history.some((h: any) => h.pack_id === 'manufacturing') && history.some((h: any) => h.pack_id === 'facilities'));
     assert.notEqual(own.tenant_id, TENANT_A);
   });
 
@@ -326,7 +330,7 @@ describe('Pack lifecycle: upgrade with a process in flight, deactivation, reacti
   it('an export of another tenant is applied to the caller\'s own tenant only', async () => {
     const foreign = { ...exported, tenant_id: TENANT_A };
     await api(ADMIN, 'POST', '/api/tenant/packs/import', { document: foreign });
-    assert.deepEqual((await api('adam.admin', 'GET', '/api/tenant/packs')).map((p: any) => p.pack_id).sort(), ['disaster-infrastructure', 'platform-core', 'public-services']);
+    assert.deepEqual((await api('adam.admin', 'GET', '/api/tenant/packs')).map((p: any) => p.pack_id).sort(), ['disaster-infrastructure', 'integration-hub', 'operational-reporting', 'platform-core', 'procurement-inventory', 'public-services', 'video-monitoring']);
   });
 
   it('every change is in the pack history and in the audit trail', async () => {

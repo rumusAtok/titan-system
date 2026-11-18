@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "id": "video-monitoring",
+  "version": "1.0.0",
+  "name": "Video monitoring",
+  "industry": "All industries",
+  "description": "Camera register on the map, audited viewing sessions (every viewing states a purpose), references to recordings held by an external video management system with retention and legal hold, and markers that link moments to incidents. TITAN does not store, stream or analyse video.",
+  "requires": { "capabilities": ["video"], "packs": [{ "id": "platform-core" }] },
+  "roles": [
+    { "role": "security_operator", "name": "Security operator", "description": "Watches cameras, maintains the camera register and marks moments for incidents", "permissions": ["video.view", "video.cameras.manage", "video.markers.create"] }
+  ],
+  "navigation": [
+    { "key": "video", "label": "Cameras", "href": "/video/", "icon": "video", "roles": ["security_operator", "incident_commander", "duty_officer", "facility_manager", "tenant_admin", "auditor"], "order": 250 }
+  ],
+  "lifecycle": {
+    "upgrades_from": [],
+    "changes": ["Initial version"],
+    "on_deactivate": "The video capability is withdrawn: the camera register, viewing log, recording references and markers are kept but cannot be read or changed until it is active again."
+  }
+}

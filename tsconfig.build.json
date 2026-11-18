@@ -16,6 +16,12 @@
     { "path": "services/alert-service" },
     { "path": "services/incident-service" },
     { "path": "services/maintenance-service" },
+    { "path": "services/document-service" },
+    { "path": "services/geospatial-service" },
+    { "path": "services/procurement-service" },
+    { "path": "services/report-service" },
+    { "path": "services/integration-service" },
+    { "path": "services/video-service" },
     { "path": "apps/gateway" }
   ]
 }

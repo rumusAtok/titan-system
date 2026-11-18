@@ -17,15 +17,15 @@ It is meant to be read before anyone plans a deployment.
 
 | Item | State |
 | --- | --- |
-| document, maintenance, procurement, geospatial, video, integration and report services | Designed in the service map; no code |
+| Full document management, GIS, ERP, BI, integration platform and video management | Minimum slices of document, geospatial, procurement, report, integration and video services exist (ADR-0015); what each does not do is listed in the service map and below |
 | Kubernetes deployment, Argo CD synchronisation, CloudNativePG, Velero, External Secrets | Manifests supplied and validated; never applied to a cluster |
 | CI pipeline (`.github/workflows/ci.yml`) | Written; never executed |
-| Point-in-time recovery | WAL is archived by the primary; restoring to a chosen moment was not drilled |
+| Point-in-time recovery | Drilled on one host (`npm run dr:pitr-drill`, base backup + archived WAL into an isolated instance). The WAL archive is a local volume kept 3 days; there is no off-site archive |
 | Distributed trace export | Trace ids are generated, propagated and logged; no spans are exported, no trace UI |
-| E-mail, SMS or push delivery | Notifications are stored and shown in the application only; the e-mail channel is a logging stub and says so |
-| Document management | Case attachments are small files stored inside the case database; there is no object storage, malware scanning, versioning or retention handling |
-| Alert routing to people | Prometheus evaluates rules; no Alertmanager |
-| Own map base layer | The GIS view loads its background from the public OpenStreetMap tile server (see S12); there is no self-hosted or licensed tile source, and no spatial queries |
+| E-mail, SMS or push delivery | E-mail is sent over SMTP to a local catcher (Mailpit) only; the adapter refuses any other host. No real mail relay, SMS or push |
+| Document management | document-service keeps versions (max 5 MB) in its database (no object storage). The built-in upload check verifies type signatures and the EICAR test string; real antivirus (ClamAV) is available in the optional `scan` profile and then fails closed. Full-text search covers text and CSV only (no PDF text or OCR). Retention periods are illustrative, not legal advice. Case attachments are still stored by case-service |
+| Alert routing to people | Alertmanager groups and routes alerts, but only to the local test receiver; no paging, chat or on-call integration |
+| Own map base layer | The GIS view loads its background from the public OpenStreetMap tile server (see S12); there is no self-hosted or licensed tile source. Zones are evaluated in application code, not with PostGIS |
 | Multi-factor authentication | Available in Keycloak; not enforced by the realm |
 
 ## Risks
@@ -51,6 +51,10 @@ M = medium, H = high.
 | S12 | The GIS page makes each viewer's browser request map tiles from `tile.openstreetmap.org`: that third party sees the viewer's IP address and the area being looked at (no platform records are sent). The public server's usage policy also does not allow heavy or operational use | H | M | One setting (`MAP_TILE_URL` in `.env`) points it at another tile service or, with `none`, switches the background off so that nothing is requested from outside; the Content-Security-Policy allows only the configured origin. In the Helm chart it is `global.mapTileUrl`, empty (no base map) by default | A self-hosted or contracted tile service inside the organisation's network |
 
 | S13 | A tenant's entitlements are cached by the Python services for 5 s and kept for up to 10 min while tenant-service is unreachable: a deactivated capability can stay readable through analytics and AI for that long | L | M | Node services use an event-fed projection (changes apply in seconds); unknown means no access | Event-fed projection in the Python services too |
+| S15 | Inbound webhooks are a public, unauthenticated route at the gateway | M | M | HMAC-SHA256 over timestamp and raw body, 5-minute window, one acceptance per event id, 256 KB and per-address rate limit; unknown, inactive and non-entitled endpoints all answer 404; refusals are logged | Network allow-lists for senders; WAF; alerting on refusal rates |
+| S16 | Webhook signing secrets are sealed with one key from the environment (`INTEGRATION_SECRET_KEY`); the development value is in `.env.example` | H | M | AES-256-GCM; secrets shown once; rotation per endpoint | Key from a secret manager; key rotation with re-sealing |
+| S17 | Outbound webhooks send event data (references and states, no personal data by design) to whatever host an operator puts on the allow-list | L | M | Allow-list checked at subscription and at every delivery; no redirects followed; default list is the local test receiver only; the Helm chart opens no internet egress | Data-sharing agreement per destination; review of the subscribable events |
+| S18 | CCTV: a viewer who opened a stream URL can keep using it outside TITAN | M | M | URLs are never listed, only returned inside a viewing session with a stated purpose, which is logged and audited; URLs with embedded credentials are refused | Short-lived signed stream URLs issued by the VMS; privacy impact assessment |
 | S14 | A deactivated pack keeps its installed definitions, rules and categories: re-activation does not start clean, and an active alert rule of a deactivated pack still evaluates readings (it can no longer receive any, because the iot capability is withdrawn when no other pack provides it) | L | L | Deliberate: no data is deleted (ADR-0011) | An explicit 'retire templates' action with review |
 
 ### Reliability and data
@@ -86,6 +90,10 @@ M = medium, H = high.
 | P9 | v3 work is on the branch `feature/v3-industry-packs`, not yet committed or reviewed | H | M | v2 is committed and pushed (`c78f461`) | Commit, review, merge |
 | P10 | Industry pack thresholds (vibration, bearing temperature) are illustrative defaults, not engineering guidance | H | M | Labelled in the manifest help text and the procedure documents; adjustable per tenant | Set from the machine class and the operator's own baselines |
 | P11 | Packs describe roles but cannot create them: roles and users are managed in Keycloak, and permissions apply to the whole tenant (no per-site scoping) | H | M | Role templates shown to administrators; services enforce roles | Role provisioning from packs; site-scoped authorization |
+| P15 | Preventive plans open work orders without an approval workflow (the plan is the authorisation); planners can therefore create recurring work on any asset | M | L | Only planning roles may create plans; every generated order is recorded with its plan as origin | Plan approval if the organisation requires it |
+| P16 | Live video on the camera page comes from a local test server playing a synthetic pattern; there is no connection to a real video management system | H | L | Labelled on the page and in ADR-0016 | VMS integration with short-lived stream URLs (S18) |
+| P13 | Procurement amounts, budget threshold (5000) and replenishment quantities are illustrative; purchase orders are internal records and never sent to a supplier | H | L | Documented in the pack and ADR-0015 | Configure from the organisation's procurement policy; supplier integration |
+| P14 | geospatial-service learns assets and devices from events; NATS keeps events for 7 days, so a fresh geospatial database does not see older assets until they change | M | L | Seeded data is recent; point queries still work for zones | A one-time backfill from asset- and device-service APIs |
 | P12 | maintenance-service is a minimum slice: no preventive schedules, spare parts, labour costing or inspection plans | H | M | Documented (ADR-0014) | Extend as real requirements are known |
 
 ## No safety-critical control

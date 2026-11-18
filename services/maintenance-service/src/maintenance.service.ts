@@ -4,9 +4,10 @@ import { Capabilities, type EventEnvelope, type EventPayload, type FieldSpec, Pa
 import type { Logger } from '@titan/observability';
 import { Db, DomainError, Entitlements, EventConsumers, LOGGER, Outbox, type Q } from '@titan/platform';
 import { z } from 'zod';
-import { canPerform, hoursBetween, mayExecute, type Priority, priorityFromSeverity, type WorkOrderStatus } from './rules.js';
+import { canPerform, hoursBetween, laborCost, mayExecute, type Priority, priorityFromSeverity, type WorkOrderStatus } from './rules.js';
 
 const priority = z.enum(['low', 'normal', 'high', 'urgent']);
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const CreateRequest = z.object({
   request_type: z.string().regex(/^[a-z][a-z0-9-]{1,62}$/),
@@ -45,6 +46,23 @@ export const CompleteWorkOrder = z.object({
   labor_hours: z.number().min(0).max(10_000).nullable().default(null),
   /** Condition of the asset after the work; applied to the asset by asset-service. */
   condition_after: z.enum(['good', 'fair', 'poor', 'critical']).nullable().default(null),
+  /** Parts used. Booked out of stores by procurement-service when the tenant has that capability. */
+  parts: z
+    .array(
+      z.object({
+        sku: z.string().regex(/^[A-Z0-9][A-Z0-9_-]{1,40}$/),
+        quantity: z.number().positive().max(100_000),
+        location: z.string().regex(/^[A-Z0-9][A-Z0-9_-]{1,31}$/).optional(),
+      }),
+    )
+    .max(30)
+    .default([]),
+});
+
+export const MaintenanceSettings = z.object({
+  labor_rate_per_hour: z.number().min(0).max(100_000),
+  currency: z.string().regex(/^[A-Z]{3}$/),
+  parts_store: z.string().regex(/^[A-Z0-9][A-Z0-9_-]{1,31}$/),
 });
 
 export const CancelWorkOrder = z.object({ reason: z.string().trim().min(3).max(1000) });
@@ -77,7 +95,7 @@ export interface RequestRow {
   description: string;
   priority: Priority;
   status: 'submitted' | 'approved' | 'rejected' | 'cancelled';
-  origin_type: 'manual' | 'incident';
+  origin_type: 'manual' | 'incident' | 'schedule' | 'inspection';
   origin_id: string | null;
   asset_id: string | null;
   details: Record<string, unknown>;
@@ -111,6 +129,13 @@ export interface WorkOrderRow {
   labor_hours: number | null;
   condition_after: 'good' | 'fair' | 'poor' | 'critical' | null;
   cancelled_reason: string | null;
+  parts: { sku: string; quantity: number; location: string; booked?: boolean; unit_cost?: number; error?: string }[];
+  parts_cost: number;
+  labor_rate: number | null;
+  labor_cost: number | null;
+  cost_currency: string | null;
+  estimated_hours: number | null;
+  checklist: string[];
   version: number;
   created_at: Date;
   updated_at: Date;
@@ -120,7 +145,8 @@ const TYPE = 'key, name, description, subject_type, workflow_key, default_priori
 const REQUEST = `id, tenant_id, reference_no, request_type, pack_id, subject_type, workflow_key, title, description, priority, status, origin_type, origin_id,
   asset_id, details, requested_by, requested_by_username, submitted_at, decided_at, version`;
 const WORK_ORDER = `id, tenant_id, reference_no, request_id, request_type, pack_id, title, description, priority, status, asset_id, origin_type, origin_id,
-  assignee_id, assignee_username, assigned_at, started_at, completed_at, completion_summary, labor_hours, condition_after, cancelled_reason, version, created_at, updated_at`;
+  assignee_id, assignee_username, assigned_at, started_at, completed_at, completion_summary, labor_hours, condition_after, cancelled_reason,
+  parts, parts_cost, labor_rate, labor_cost, cost_currency, estimated_hours, checklist, version, created_at, updated_at`;
 
 interface NewRequest {
   type: RequestTypeRow;
@@ -129,7 +155,7 @@ interface NewRequest {
   priority: Priority;
   assetId: string | null;
   details: Record<string, unknown>;
-  origin: { type: 'manual' | 'incident'; id: string | null };
+  origin: { type: 'manual' | 'incident' | 'schedule' | 'inspection'; id: string | null };
   requester: { id: string; username: string } | null;
 }
 
@@ -154,7 +180,10 @@ export class MaintenanceService implements OnApplicationBootstrap {
 
   onApplicationBootstrap(): void {
     this.consumers.register({
-      subjects: ['tenant.pack.activated.v1', 'incident.created.v1', 'workflow.instance.completed.v1', 'asset.created.v1', 'asset.status_changed.v1'],
+      subjects: [
+        'tenant.pack.activated.v1', 'incident.created.v1', 'workflow.instance.completed.v1', 'asset.created.v1', 'asset.status_changed.v1',
+        'procurement.stock.issued.v1', 'procurement.stock.issue_failed.v1',
+      ],
       handler: (event, q) => this.onEvent(event, q),
     });
   }
@@ -226,7 +255,8 @@ export class MaintenanceService implements OnApplicationBootstrap {
   // ---------------------------------------------------------------------------
 
   /** Stores the request and, in the same transaction, announces it and asks for its approval process. */
-  private async submit(q: Q, tenantId: string, input: NewRequest): Promise<RequestRow | null> {
+  /** Internal API (also used by planning). */
+  async submit(q: Q, tenantId: string, input: NewRequest): Promise<RequestRow | null> {
     const reference = await this.nextReference(q, tenantId, 'MR');
     const request = await q.maybeOne<RequestRow>(
       `INSERT INTO maintenance_requests (tenant_id, reference_no, request_type, pack_id, subject_type, workflow_key, title, description, priority,
@@ -403,16 +433,20 @@ export class MaintenanceService implements OnApplicationBootstrap {
   // Work orders
   // ---------------------------------------------------------------------------
 
-  private async openWorkOrder(q: Q, request: RequestRow): Promise<void> {
+  async openWorkOrder(q: Q, request: RequestRow, extra: { estimatedHours?: number | null; checklist?: string[] } = {}): Promise<WorkOrderRow | null> {
     const reference = await this.nextReference(q, request.tenant_id, 'WO');
     const order = await q.maybeOne<WorkOrderRow>(
-      `INSERT INTO work_orders (tenant_id, reference_no, request_id, request_type, pack_id, title, description, priority, asset_id, origin_type, origin_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      `INSERT INTO work_orders (tenant_id, reference_no, request_id, request_type, pack_id, title, description, priority, asset_id, origin_type, origin_id,
+                                estimated_hours, checklist)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        ON CONFLICT (request_id) DO NOTHING
        RETURNING ${WORK_ORDER}`,
-      [request.tenant_id, reference, request.id, request.request_type, request.pack_id, request.title, request.description, request.priority, request.asset_id, request.origin_type, request.origin_id],
+      [
+        request.tenant_id, reference, request.id, request.request_type, request.pack_id, request.title, request.description, request.priority,
+        request.asset_id, request.origin_type, request.origin_id, extra.estimatedHours ?? null, extra.checklist ?? [],
+      ],
     );
-    if (!order) return;
+    if (!order) return null;
     await this.log(q, order, 'created', `Created from approved request ${request.reference_no}`, null);
     await this.outbox.emit(q, {
       type: 'maintenance.work_order.created.v1',
@@ -437,6 +471,97 @@ export class MaintenanceService implements OnApplicationBootstrap {
     for (const role of [Roles.MaintenancePlanner, Roles.FacilityManager]) {
       await this.notify(q, order.tenant_id, { type: 'work_order', id: order.id }, { role }, `work-order-created:${order.id}:${role}`, 'maintenance.work_order_created', `Work order ${order.reference_no} needs assigning`, order.title);
     }
+    return order;
+  }
+
+  /**
+   * Planned work from a preventive plan: the request is recorded as approved by the plan and the
+   * work order opened at once. No approval workflow is started: the plan, created by a planner,
+   * is the authorisation.
+   */
+  async createPlannedWork(
+    q: Q,
+    tenantId: string,
+    input: {
+      type: RequestTypeRow;
+      title: string;
+      description: string;
+      priority: Priority;
+      assetId: string | null;
+      origin: { type: 'schedule'; id: string };
+      estimatedHours: number | null;
+      checklist: string[];
+    },
+  ): Promise<WorkOrderRow | null> {
+    const reference = await this.nextReference(q, tenantId, 'MR');
+    const request = await q.maybeOne<RequestRow>(
+      `INSERT INTO maintenance_requests (tenant_id, reference_no, request_type, pack_id, subject_type, workflow_key, title, description, priority,
+                                         status, decided_at, origin_type, origin_id, asset_id, details)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'approved', now(), $10, $11, $12, '{}')
+       ON CONFLICT DO NOTHING RETURNING ${REQUEST}`,
+      [tenantId, reference, input.type.key, input.type.pack_id, input.type.subject_type, input.type.workflow_key, input.title, input.description, input.priority, input.origin.type, input.origin.id, input.assetId],
+    );
+    if (!request) return null;
+    await this.outbox.emit(q, {
+      type: 'maintenance.request.submitted.v1',
+      aggregateType: 'maintenance_request',
+      aggregateId: request.id,
+      tenantId,
+      payload: {
+        request_id: request.id,
+        reference_no: request.reference_no,
+        request_type: request.request_type,
+        pack_id: request.pack_id,
+        subject_type: request.subject_type,
+        title: request.title,
+        priority: request.priority,
+        origin_type: request.origin_type,
+        origin_id: request.origin_id,
+        asset_id: request.asset_id,
+        requested_by: null,
+        submitted_at: request.submitted_at.toISOString(),
+      },
+    });
+    await this.outbox.emit(q, {
+      type: 'maintenance.request.decided.v1',
+      aggregateType: 'maintenance_request',
+      aggregateId: request.id,
+      tenantId,
+      payload: {
+        request_id: request.id,
+        reference_no: request.reference_no,
+        request_type: request.request_type,
+        pack_id: request.pack_id,
+        outcome: 'approved',
+        submitted_at: request.submitted_at.toISOString(),
+        decided_at: request.submitted_at.toISOString(),
+      },
+    });
+    return this.openWorkOrder(q, request, { estimatedHours: input.estimatedHours, checklist: input.checklist });
+  }
+
+  async settingsOf(q: Q, tenantId: string): Promise<{ labor_rate_per_hour: number; currency: string; parts_store: string }> {
+    const row = await q.maybeOne<{ labor_rate_per_hour: number; currency: string; parts_store: string }>(
+      'SELECT labor_rate_per_hour, currency, parts_store FROM maintenance_settings WHERE tenant_id = $1',
+      [tenantId],
+    );
+    return row ? { ...row, labor_rate_per_hour: Number(row.labor_rate_per_hour) } : { labor_rate_per_hour: 45, currency: 'USD', parts_store: 'MAIN-STORE' };
+  }
+
+  getSettings(user: Principal) {
+    return this.db.tx(user.tenantId, (q) => this.settingsOf(q, user.tenantId));
+  }
+
+  saveSettings(user: Principal, input: z.infer<typeof MaintenanceSettings>) {
+    return this.db.tx(user.tenantId, (q) =>
+      q.one(
+        `INSERT INTO maintenance_settings (tenant_id, labor_rate_per_hour, currency, parts_store, updated_by) VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (tenant_id) DO UPDATE SET labor_rate_per_hour = EXCLUDED.labor_rate_per_hour, currency = EXCLUDED.currency,
+                                               parts_store = EXCLUDED.parts_store, updated_by = EXCLUDED.updated_by, updated_at = now()
+         RETURNING labor_rate_per_hour, currency, parts_store, updated_by, updated_at`,
+        [user.tenantId, input.labor_rate_per_hour, input.currency, input.parts_store, user.username],
+      ),
+    );
   }
 
   listWorkOrders(user: Principal, query: z.infer<typeof ListWorkOrders>) {
@@ -523,13 +648,19 @@ export class MaintenanceService implements OnApplicationBootstrap {
       if (!mayExecute(user, order.assignee_id, PLANNING_ROLES)) throw DomainError.forbidden('only the assigned technician or a planner may complete this work order');
       if (!canPerform('complete', order.status)) throw DomainError.conflict('invalid_state', `a work order that is ${order.status} cannot be completed`);
       if (input.condition_after && !order.asset_id) throw DomainError.invalid('condition_after applies only to work on an asset');
+      const settings = await this.settingsOf(q, user.tenantId);
+      const parts = input.parts.map((p) => ({ sku: p.sku, quantity: p.quantity, location: p.location ?? settings.parts_store }));
+      const cost = laborCost(input.labor_hours, settings.labor_rate_per_hour);
       const updated = await q.one<WorkOrderRow>(
         `UPDATE work_orders
-            SET status = 'completed', completed_at = now(), completion_summary = $2, labor_hours = $3, condition_after = $4, version = version + 1, updated_at = now()
+            SET status = 'completed', completed_at = now(), completion_summary = $2, labor_hours = $3, condition_after = $4,
+                parts = $5, labor_rate = $6, labor_cost = $7, cost_currency = $8, version = version + 1, updated_at = now()
           WHERE id = $1 RETURNING ${WORK_ORDER}`,
-        [id, input.summary, input.labor_hours, input.condition_after],
+        [id, input.summary, input.labor_hours, input.condition_after, JSON.stringify(parts), settings.labor_rate_per_hour, cost, settings.currency],
       );
       await this.log(q, order, 'completed', input.summary, user.username);
+      if (cost !== null) await this.log(q, order, 'cost', `Labour ${input.labor_hours} h at ${settings.labor_rate_per_hour} ${settings.currency}/h = ${cost} ${settings.currency}`, null);
+      if (parts.length) await this.log(q, order, 'parts', `Parts used: ${parts.map((p) => `${p.quantity} x ${p.sku} from ${p.location}`).join(', ')}`, user.username);
       await this.outbox.emit(q, {
         type: 'maintenance.work_order.completed.v1',
         aggregateType: 'work_order',
@@ -552,6 +683,9 @@ export class MaintenanceService implements OnApplicationBootstrap {
           created_at: order.created_at.toISOString(),
           started_at: updated.started_at ? updated.started_at.toISOString() : null,
           completed_at: updated.completed_at!.toISOString(),
+          parts,
+          labor_cost: cost,
+          currency: settings.currency,
         },
       });
       // Tell whoever raised the request that the work is done.
@@ -661,6 +795,33 @@ export class MaintenanceService implements OnApplicationBootstrap {
            ON CONFLICT (asset_id) DO UPDATE SET code = EXCLUDED.code, name = EXCLUDED.name, category = EXCLUDED.category`,
           [p.asset_id, event.tenant_id, p.code, p.name, p.category, p.status],
         );
+        return;
+      }
+      // Parts named on a completed work order, as booked (or not) by procurement-service.
+      case 'procurement.stock.issued.v1': {
+        const p = event.payload as EventPayload<'procurement.stock.issued.v1'>;
+        if (p.reference_type !== 'work_order' || !p.reference_id || !UUID.test(p.reference_id)) return;
+        const order = await q.maybeOne<WorkOrderRow>(`SELECT ${WORK_ORDER} FROM work_orders WHERE id = $1 FOR UPDATE`, [p.reference_id]);
+        if (!order) return;
+        const lineCost = p.unit_cost === undefined ? 0 : Math.round(p.quantity * p.unit_cost * 100) / 100;
+        let marked = false;
+        const parts = order.parts.map((x) => {
+          if (marked || x.sku !== p.sku || x.booked) return x;
+          marked = true;
+          return { ...x, booked: true, unit_cost: p.unit_cost };
+        });
+        await q.exec('UPDATE work_orders SET parts = $2, parts_cost = parts_cost + $3, updated_at = now() WHERE id = $1', [order.id, JSON.stringify(parts), lineCost]);
+        await this.log(q, order, 'parts', `${p.quantity} x ${p.sku} booked out of ${p.location}${p.unit_cost === undefined ? '' : ` (${lineCost} ${p.currency ?? ''})`}`, null);
+        return;
+      }
+      case 'procurement.stock.issue_failed.v1': {
+        const p = event.payload as EventPayload<'procurement.stock.issue_failed.v1'>;
+        if (p.reference_type !== 'work_order' || !UUID.test(p.reference_id)) return;
+        const order = await q.maybeOne<WorkOrderRow>(`SELECT ${WORK_ORDER} FROM work_orders WHERE id = $1 FOR UPDATE`, [p.reference_id]);
+        if (!order) return;
+        const parts = order.parts.map((x) => (x.sku === p.sku && !x.booked ? { ...x, error: p.reason } : x));
+        await q.exec('UPDATE work_orders SET parts = $2, updated_at = now() WHERE id = $1', [order.id, JSON.stringify(parts)]);
+        await this.log(q, order, 'parts', `${p.quantity} x ${p.sku} could not be booked out of ${p.location}: ${p.reason}`, null);
         return;
       }
       case 'asset.status_changed.v1': {

@@ -33,6 +33,9 @@ async def on_start(app: FastAPI) -> None:
         else None
     )
     await asyncio.to_thread(runner.ensure_layout)
+    interrupted = await asyncio.to_thread(runner.fail_interrupted_runs)
+    if interrupted:
+        log.warning("runs interrupted by a restart recorded as failed", runs=interrupted)
 
     def land(envelope: dict[str, Any], stream_seq: int) -> None:
         with db.tx(None) as conn:

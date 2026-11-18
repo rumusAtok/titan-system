@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "id": "procurement-inventory",
+  "version": "1.0.0",
+  "name": "Procurement and stores",
+  "industry": "All industries",
+  "description": "Suppliers, stock items and stock levels per store, purchase requests with approval (a budget approval above 5000), purchase orders as internal records, goods receipts, stock issues to work orders, and automatic replenishment requests when stock falls to its reorder level. Nothing is sent to suppliers.",
+  "requires": { "capabilities": ["procurement"], "packs": [{ "id": "platform-core" }] },
+  "roles": [
+    { "role": "procurement_officer", "name": "Procurement officer", "description": "Maintains suppliers and the item catalogue, reviews purchase requests", "permissions": ["procurement.suppliers.manage", "procurement.items.manage", "procurement.requests.review"] },
+    { "role": "storekeeper", "name": "Storekeeper", "description": "Receives goods, issues stock and records stock counts", "permissions": ["procurement.goods.receive", "procurement.stock.issue", "procurement.stock.count", "procurement.requests.raise"] },
+    { "role": "department_head", "name": "Budget holder", "description": "Approves purchase requests of 5000 or more", "permissions": ["procurement.requests.approve_budget"] }
+  ],
+  "navigation": [
+    { "key": "procurement", "label": "Procurement and stores", "href": "/procurement/", "icon": "shopping-cart", "roles": ["procurement_officer", "storekeeper", "department_head", "maintenance_planner", "facility_manager", "tenant_admin", "auditor", "analyst"], "order": 450 }
+  ],
+  "workflows": [
+    {
+      "key": "purchase-approval",
+      "name": "Purchase request approval",
+      "subject_type": "purchase_request",
+      "definition": {
+        "allow_return": false,
+        "applicant_notifications": [],
+        "stages": [
+          { "key": "procurement_review", "name": "Procurement review", "type": "single", "roles": ["procurement_officer"], "sla_hours": 24, "escalate_to_role": "tenant_admin" },
+          { "key": "budget_approval", "name": "Budget approval", "type": "single", "roles": ["department_head"], "sla_hours": 48, "condition": { "field": "total_amount", "op": "gte", "value": 5000 } }
+        ]
+      }
+    }
+  ],
+  "lifecycle": {
+    "upgrades_from": [],
+    "changes": ["Initial version"],
+    "on_deactivate": "The procurement capability is withdrawn: requests, orders, receipts and stock records are kept but can no longer be changed. Approvals that finish while it is off issue no purchase order."
+  }
+}

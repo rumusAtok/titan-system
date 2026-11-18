@@ -11,6 +11,7 @@
   "dependencies": {
     "@tanstack/react-query": "5.107.1",
     "echarts": "6.1.0",
+    "hls.js": "1.7.3",
     "keycloak-js": "26.2.5",
     "lucide-react": "1.72.0",
     "maplibre-gl": "6.18.0",

@@ -19,7 +19,12 @@ moving a service to its own instance is a connection-string change.
 | `titan_alert` | alert-service | `alert_owner` | `alert_app` | alert_rules (with incident category and owning pack), alerts, device_names |
 | `titan_incident` | incident-service | `incident_owner` | `incident_app` | incident_categories, incidents, incident_timeline |
 | `titan_maintenance` | maintenance-service (v3) | `maintenance_owner` | `maintenance_app` | request_types, maintenance_requests, work_orders, work_order_events, asset_projection, maintenance_counters |
-| `titan_pipeline` | data-pipeline-service | `pipeline_owner` | `pipeline_app` | bronze_events, pipeline_runs, dataset_catalog, lineage_edges, quality_results |
+| `titan_document` | document-service | `document_owner` | `document_app` | documents, document_versions (content bytea, max 5 MB, sha256), document_links, document_events (append-only), document_counters |
+| `titan_geo` | geospatial-service | `geo_owner` | `geo_app` | zones (GeoJSON + bounding box), located_features (projection of assets, devices, cameras), incident_locations |
+| `titan_procurement` | procurement-service | `procurement_owner` | `procurement_app` | suppliers, items, stock_levels (CHECK on_hand >= 0), stock_movements (append-only), purchase_requests (+ lines), purchase_orders (+ lines), goods_receipts, procurement_counters |
+| `titan_report` | report-service | `report_owner` | `report_app` | report_definitions, report_runs (result rows as JSON) |
+| `titan_integration` | integration-service | `integration_owner` | `integration_app` | inbound_endpoints (sealed secrets), inbound_messages (append-only), subscriptions (sealed secrets), deliveries |
+| `titan_video` | video-service | `video_owner` | `video_app` | cameras, view_sessions (no DELETE), recordings (references only), markers, incident_refs || `titan_pipeline` | data-pipeline-service | `pipeline_owner` | `pipeline_app` | bronze_events, pipeline_runs, dataset_catalog, lineage_edges, quality_results |
 | `titan_analytics` | analytics-service | `analytics_owner` | `analytics_app`, `analytics_ro` | kpi_* read models, dataset_loads |
 | `titan_ai` | ai-gateway-service | `ai_owner` | `ai_app` | reference_documents, document_chunks (pgvector), tool_executions, pending_actions, report_drafts |
 | `keycloak` | Keycloak | `keycloak` | `keycloak` | identity store |
@@ -40,6 +45,13 @@ Rules that make this ownership real:
   `incidents.source_type` accepts four more origins. Every existing row satisfies the new rule.
 - Data needed from another service is copied by events into a **local projection**
   (`device_projection` in telemetry, `device_names` in alerting), never joined across databases.
+
+Every table of the six databases above has `tenant_id` and a row-level security policy on
+`app_tenant_id()` (checked by `tests/security/modules-isolation.test.ts`). Cross-tenant work uses
+narrowly scoped `SECURITY DEFINER` functions that return ids only: `report_definitions_due`,
+`deliveries_due`, `recordings_expired`, and `inbound_endpoint_tenant` (maps a public webhook
+endpoint id to its tenant, nothing else). Each service database also holds the
+`tenant_entitlements` projection.
 
 ## Conventions
 

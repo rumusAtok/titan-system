@@ -1,0 +1,388 @@
+{
+  "components": {
+    "schemas": {},
+    "securitySchemes": {
+      "bearer": {
+        "bearerFormat": "JWT",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "contact": {},
+    "description": "Signed inbound webhooks that report incidents, and outbound event subscriptions delivered (signed, with retries) to allow-listed destinations only.",
+    "title": "TITAN integration-service",
+    "version": "0.1.0"
+  },
+  "openapi": "3.0.0",
+  "paths": {
+    "/catalogue": {
+      "get": {
+        "operationId": "IntegrationController_catalogue",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Event types that can be forwarded, destination hosts on the allow-list, and the signature scheme",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/deliveries/{id}/retry": {
+      "post": {
+        "operationId": "IntegrationController_retry",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/endpoints": {
+      "get": {
+        "operationId": "IntegrationController_endpoints",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "integrations"
+        ]
+      },
+      "post": {
+        "operationId": "IntegrationController_createEndpoint",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "default_category": {
+                    "default": null,
+                    "nullable": true,
+                    "pattern": "^[a-z][a-z0-9-]{1,62}$",
+                    "type": "string"
+                  },
+                  "default_severity": {
+                    "default": "warning",
+                    "enum": [
+                      "info",
+                      "warning",
+                      "critical"
+                    ],
+                    "type": "string"
+                  },
+                  "name": {
+                    "maxLength": 120,
+                    "minLength": 3,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create an inbound incident endpoint. The signing secret is returned once",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/endpoints/{id}": {
+      "patch": {
+        "operationId": "IntegrationController_setActive",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "active": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "active"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/endpoints/{id}/messages": {
+      "get": {
+        "operationId": "IntegrationController_messages",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Requests received on an endpoint: accepted, duplicate and rejected (with reason)",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/endpoints/{id}/rotate-secret": {
+      "post": {
+        "operationId": "IntegrationController_rotate",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/subscriptions": {
+      "get": {
+        "operationId": "IntegrationController_subscriptions",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "integrations"
+        ]
+      },
+      "post": {
+        "operationId": "IntegrationController_createSubscription",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "event_types": {
+                    "items": {
+                      "enum": [
+                        "incident.created.v1",
+                        "incident.acknowledged.v1",
+                        "incident.resolved.v1",
+                        "alert.raised.v1",
+                        "alert.cleared.v1",
+                        "maintenance.work_order.created.v1",
+                        "maintenance.work_order.completed.v1",
+                        "procurement.purchase_order.issued.v1",
+                        "procurement.goods.received.v1",
+                        "procurement.stock.low.v1",
+                        "document.version.published.v1",
+                        "report.generated.v1",
+                        "geo.incident.in_zone.v1",
+                        "video.marker.created.v1"
+                      ],
+                      "type": "string"
+                    },
+                    "maxItems": 14,
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "name": {
+                    "maxLength": 120,
+                    "minLength": 3,
+                    "type": "string"
+                  },
+                  "target_url": {
+                    "maxLength": 500,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "target_url",
+                  "event_types"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Forward selected events to an allow-listed destination, signed. The signing secret is returned once",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/subscriptions/{id}": {
+      "patch": {
+        "operationId": "IntegrationController_updateSubscription",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "active": {
+                    "type": "boolean"
+                  },
+                  "event_types": {
+                    "items": {
+                      "enum": [
+                        "incident.created.v1",
+                        "incident.acknowledged.v1",
+                        "incident.resolved.v1",
+                        "alert.raised.v1",
+                        "alert.cleared.v1",
+                        "maintenance.work_order.created.v1",
+                        "maintenance.work_order.completed.v1",
+                        "procurement.purchase_order.issued.v1",
+                        "procurement.goods.received.v1",
+                        "procurement.stock.low.v1",
+                        "document.version.published.v1",
+                        "report.generated.v1",
+                        "geo.incident.in_zone.v1",
+                        "video.marker.created.v1"
+                      ],
+                      "type": "string"
+                    },
+                    "maxItems": 14,
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "expected_version": {
+                    "exclusiveMinimum": true,
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "expected_version"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/subscriptions/{id}/deliveries": {
+      "get": {
+        "operationId": "IntegrationController_deliveries",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "integrations"
+        ]
+      }
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    }
+  ],
+  "servers": [],
+  "tags": []
+}

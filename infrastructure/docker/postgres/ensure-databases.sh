@@ -14,7 +14,7 @@ set -euo pipefail
 : "${PGHOST:?PGHOST must be set}"
 : "${PGUSER:?PGUSER must be set}"
 
-SERVICES="tenant case workflow notification audit asset device telemetry alert incident maintenance analytics pipeline ai"
+SERVICES="tenant case workflow notification audit asset device telemetry alert incident maintenance document geo procurement report integration video analytics pipeline ai"
 
 for attempt in $(seq 1 60); do
   if pg_isready -q -h "$PGHOST" -U "$PGUSER" -d postgres; then break; fi

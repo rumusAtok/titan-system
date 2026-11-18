@@ -7,9 +7,12 @@ import { BulkheadFullError, CircuitOpenError, retry, TimeoutError } from '@titan
 import type { TokenBucketLimiter } from './rate-limit.js';
 import type { Upstream } from './upstreams.js';
 
-const MAX_BODY_BYTES = 6 * 1024 * 1024;
+// 5 MB documents travel base64-encoded in JSON (about 6.7 MB): see document-service.
+const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const FORWARDED_REQUEST_HEADERS = ['authorization', 'content-type', 'accept', 'accept-language', 'idempotency-key', 'if-match', 'if-none-match'];
-const FORWARDED_RESPONSE_HEADERS = ['content-type', 'content-disposition', 'cache-control', 'etag', 'location', 'retry-after', 'x-total-count'];
+const FORWARDED_RESPONSE_HEADERS = [
+  'content-type', 'content-disposition', 'cache-control', 'etag', 'location', 'retry-after', 'x-total-count', 'content-security-policy', 'x-content-sha256',
+];
 const IDEMPOTENT = new Set(['GET', 'HEAD', 'OPTIONS']);
 const OPERATIONAL_PATH = /^\/(metrics|health)(\/|$)/;
 
@@ -173,5 +176,64 @@ export function createProxy(deps: ProxyDeps) {
     Readable.fromWeb(response.body as unknown as WebReadableStream)
       .on('error', () => res.destroy())
       .pipe(res);
+  };
+}
+
+const WEBHOOK_MAX_BYTES = 256 * 1024;
+const WEBHOOK_HEADERS = ['content-type', 'x-titan-signature', 'x-titan-timestamp', 'x-titan-event-id'];
+const WEBHOOK_PATH = /^\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/?$/i;
+
+export interface WebhookRelayDeps {
+  upstream: Upstream;
+  /** Keyed by the caller's address: inbound webhooks carry no user identity. */
+  limiter: TokenBucketLimiter;
+  logger: Logger;
+  fetchImpl?: typeof fetch;
+}
+
+/**
+ * Public relay for inbound webhooks: `POST /hooks/<endpoint-id>` -> integration-service `/inbound/<endpoint-id>`.
+ *
+ * External systems have no TITAN token. The gateway only limits rate and size and passes the raw
+ * body and signature headers through unchanged; integration-service verifies the HMAC signature
+ * and timestamp of every request and decides everything else.
+ */
+export function createWebhookRelay(deps: WebhookRelayDeps) {
+  const doFetch = deps.fetchImpl ?? fetch;
+  return async (req: IncomingMessage & { url?: string }, res: ServerResponse): Promise<void> => {
+    const match = WEBHOOK_PATH.exec((req.url ?? '').split('?')[0] ?? '');
+    if (!match) return sendProblem(res, 404, 'not_found', 'not found');
+    if ((req.method ?? '').toUpperCase() !== 'POST') return sendProblem(res, 405, 'method_not_allowed', 'only POST is accepted', { allow: 'POST' });
+    const rate = deps.limiter.take(`hook:${req.socket.remoteAddress ?? 'unknown'}`);
+    if (!rate.allowed) return sendProblem(res, 429, 'rate_limited', 'too many requests', { 'retry-after': String(rate.retryAfterSeconds) });
+
+    const chunks: Buffer[] = [];
+    let size = 0;
+    try {
+      for await (const chunk of req) {
+        size += (chunk as Buffer).length;
+        if (size > WEBHOOK_MAX_BYTES) return sendProblem(res, 413, 'payload_too_large', 'request body too large');
+        chunks.push(chunk as Buffer);
+      }
+    } catch {
+      return sendProblem(res, 400, 'bad_request', 'could not read request body');
+    }
+    const headers: Record<string, string> = { ...propagationHeaders() };
+    for (const name of WEBHOOK_HEADERS) {
+      const value = req.headers[name];
+      if (typeof value === 'string') headers[name] = value;
+    }
+    try {
+      // Never retried here: the sender owns retries, and the event id makes them safe.
+      const response = await deps.upstream.breaker.run(() =>
+        doFetch(`${deps.upstream.baseUrl}/inbound/${match[1]}`, { method: 'POST', headers, body: Buffer.concat(chunks), signal: AbortSignal.timeout(deps.upstream.timeoutMs), redirect: 'manual' }),
+      );
+      res.statusCode = response.status;
+      res.setHeader('content-type', response.headers.get('content-type') ?? 'application/json');
+      res.end(Buffer.from(await response.arrayBuffer()));
+    } catch (err) {
+      deps.logger.warn({ error: (err as Error).message }, 'webhook relay failed');
+      sendProblem(res, 503, 'upstream_unavailable', 'integration-service is temporarily unavailable', { 'retry-after': '30' });
+    }
   };
 }

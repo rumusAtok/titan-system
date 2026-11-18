@@ -1,0 +1,100 @@
+{
+  "drill_id": "pitr-20261118T071239Z",
+  "type": "pitr",
+  "started_at": "2026-11-18T07:12:39.776Z",
+  "finished_at": "2026-11-18T07:13:50.783Z",
+  "result": "passed",
+  "environment": {
+    "topology": "single-host laboratory (docker compose); primary and recovery databases are containers on one machine",
+    "disclaimer": "Demonstrates the recovery procedure. NOT geographic disaster recovery and NOT evidence of production recovery times.",
+    "data": "synthetic"
+  },
+  "objectives": {
+    "rto_seconds": null,
+    "rpo_seconds": 0,
+    "note": "Recovery to a chosen moment: every transaction committed before the target is expected, none after it."
+  },
+  "observed": {
+    "rto_seconds": 7.2,
+    "rpo_seconds": 0,
+    "data_loss_transactions": 0
+  },
+  "summary": "A base backup (6.1G, 55.6 s) plus archived WAL was recovered to 2026-11-18 07:13:39.305+00 in an isolated instance in 7.2 s: the transaction committed before the target (APP-2026-000259) is present and the one after it (APP-2026-000260) is not.",
+  "steps": [
+    {
+      "name": "Prepare an empty work volume for the base backup",
+      "started_at": "2026-11-18T07:12:39.777Z",
+      "duration_ms": 1265,
+      "status": "passed",
+      "detail": "titan-pitr-work"
+    },
+    {
+      "name": "Take a physical base backup of the primary (pg_basebackup, replication role)",
+      "started_at": "2026-11-18T07:12:41.042Z",
+      "duration_ms": 55598,
+      "status": "passed",
+      "detail": "6.1G in 55.6 s"
+    },
+    {
+      "name": "Write T1, choose the recovery target, write T2",
+      "started_at": "2026-11-18T07:13:36.641Z",
+      "duration_ms": 4763,
+      "status": "passed",
+      "detail": "T1 APP-2026-000259, target 2026-11-18 07:13:39.305+00, T2 APP-2026-000260"
+    },
+    {
+      "name": "Archive the WAL that contains both transactions",
+      "started_at": "2026-11-18T07:13:41.404Z",
+      "duration_ms": 443,
+      "status": "passed",
+      "detail": "segment 0000000300000008000000F3 archived"
+    },
+    {
+      "name": "Start an isolated recovery instance: base backup + archived WAL, target time",
+      "started_at": "2026-11-18T07:13:41.847Z",
+      "duration_ms": 7245,
+      "status": "passed",
+      "detail": "promoted after 7.2 s; recovery stopping before commit of transaction 5804991, time 2026-11-18 07:13:39.309182+00"
+    },
+    {
+      "name": "Verify: T1 present, T2 absent, row-level security intact",
+      "started_at": "2026-11-18T07:13:49.092Z",
+      "duration_ms": 547,
+      "status": "passed",
+      "detail": "T1 present, T2 absent; newest recovered case created 2026-11-18 07:13:36.811+00 (target 2026-11-18 07:13:39.305+00)"
+    },
+    {
+      "name": "Confirm the primary was not affected",
+      "started_at": "2026-11-18T07:13:49.639Z",
+      "duration_ms": 416,
+      "status": "passed",
+      "detail": "the primary still has T1 and T2"
+    }
+  ],
+  "evidence": {
+    "backup": {
+      "size": "6.1G",
+      "seconds": 55.6
+    },
+    "before": {
+      "id": "48581069-3273-4305-b61e-1b67ecbfd37b",
+      "reference_no": "APP-2026-000259",
+      "created_at": "2026-11-18T07:13:36.873Z"
+    },
+    "target": "2026-11-18 07:13:39.305+00",
+    "after": {
+      "id": "b1040805-9906-4060-8b42-f1ce1c3b41d4",
+      "reference_no": "APP-2026-000260",
+      "created_at": "2026-11-18T07:13:41.404Z"
+    },
+    "segment": "0000000300000008000000F3",
+    "recovery_seconds": 7.2,
+    "stop": "recovery stopping before commit of transaction 5804991, time 2026-11-18 07:13:39.309182+00",
+    "latest_recovered_case": "2026-11-18 07:13:36.811+00"
+  },
+  "limitations": [
+    "Both the primary and the recovery instance run on one workstation; this demonstrates the procedure only.",
+    "The WAL archive is a Docker volume on the same machine, kept for 3 days (WAL_ARCHIVE_RETENTION_DAYS). Production needs off-site archive storage.",
+    "Only the database cluster is recovered; services were not pointed at the recovered instance in this drill."
+  ]
+}

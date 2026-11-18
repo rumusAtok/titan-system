@@ -200,6 +200,8 @@ services:
     runtime: node
     image: asset-service
     database: titan_asset
+    # Read with the caller's token by geospatial-service (backfill).
+    callers: [geospatial-service]
 
   incident-service:
     runtime: node
@@ -215,11 +217,53 @@ services:
     database: titan_maintenance
     callers: [ai-gateway-service]
 
+  # Universal core modules added after v3.
+  document-service:
+    runtime: node
+    image: document-service
+    database: titan_document
+
+  geospatial-service:
+    runtime: node
+    image: geospatial-service
+    database: titan_geo
+
+  # Switchable capabilities added after v3.
+  procurement-service:
+    runtime: node
+    image: procurement-service
+    database: titan_procurement
+
+  report-service:
+    runtime: node
+    image: report-service
+    database: titan_report
+    env:
+      ANALYTICS_URL: http://analytics-service:8000
+
+  integration-service:
+    runtime: node
+    image: integration-service
+    database: titan_integration
+    env:
+      # Outbound webhooks go only to these hosts. The chart opens NO egress to the internet:
+      # an operator must also add a NetworkPolicy for the destinations, or deliveries fail.
+      WEBHOOK_ALLOWED_HOSTS: ""
+    secretEnv:
+      INTEGRATION_SECRET_KEY: { secret: integration-service-secrets, key: INTEGRATION_SECRET_KEY }
+
+  video-service:
+    runtime: node
+    image: video-service
+    database: titan_video
+    callers: [geospatial-service]
+
   device-service:
     runtime: node
     image: device-service
     critical: true
     database: titan_device
+    callers: [geospatial-service]
 
   telemetry-service:
     runtime: node
@@ -245,7 +289,7 @@ services:
     image: analytics-service
     database: titan_analytics
     lake: readOnly
-    callers: [data-pipeline-service, ai-gateway-service]
+    callers: [data-pipeline-service, ai-gateway-service, report-service]
     env:
       TENANT_URL: http://tenant-service:3000
 

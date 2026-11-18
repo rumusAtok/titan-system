@@ -25,12 +25,12 @@ const DATASETS = new Set([
   'approval_turnaround', 'pending_tasks', 'incidents_by_severity', 'incidents_by_category', 'sensor_availability', 'water_level_trend',
   'asset_maintenance_status', 'metric_trend', 'maintenance_requests', 'maintenance_work_orders', 'work_order_turnaround',
 ]);
-const ICONS = new Set(['layout-dashboard', 'inbox', 'boxes', 'siren', 'bot', 'settings', 'life-buoy', 'gauge', 'file-text', 'clipboard-check', 'activity', 'map', 'factory', 'wrench', 'building']);
+const ICONS = new Set(['layout-dashboard', 'inbox', 'boxes', 'siren', 'bot', 'settings', 'life-buoy', 'gauge', 'file-text', 'clipboard-check', 'activity', 'map', 'factory', 'wrench', 'building', 'map-pin', 'shopping-cart', 'bar-chart', 'plug', 'video', 'network']);
 
 describe('industry pack manifests', () => {
   it('ships the expected packs', () => {
     const ids = [...new Set(manifests.map((m) => m.id))].sort();
-    assert.deepEqual(ids, ['disaster-infrastructure', 'facilities', 'manufacturing', 'platform-core', 'public-services']);
+    assert.deepEqual(ids, ['disaster-infrastructure', 'facilities', 'integration-hub', 'manufacturing', 'operational-reporting', 'platform-core', 'procurement-inventory', 'public-services', 'video-monitoring']);
   });
 
   for (const { id, file, raw } of manifests) {

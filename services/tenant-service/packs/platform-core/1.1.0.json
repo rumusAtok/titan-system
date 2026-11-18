@@ -1,0 +1,341 @@
+{
+  "schema_version": 1,
+  "id": "platform-core",
+  "version": "1.1.0",
+  "name": "Platform core",
+  "industry": "All industries",
+  "description": "Universal workspace present for every tenant: work inbox, assets, incidents, controlled documents, zones and map layers, analytics, AI assistant, administration and the default incident response process. Activated automatically; it cannot be deactivated.",
+  "requires": {
+    "capabilities": [],
+    "packs": []
+  },
+  "roles": [
+    {
+      "role": "tenant_admin",
+      "name": "Tenant administrator",
+      "description": "Administers the organisation, its industry packs and configuration",
+      "permissions": [
+        "tenant.packs.manage",
+        "tenant.config.manage",
+        "workflow.definitions.publish"
+      ]
+    },
+    {
+      "role": "auditor",
+      "name": "Auditor",
+      "description": "Reads audit records",
+      "permissions": [
+        "audit.read"
+      ]
+    },
+    {
+      "role": "analyst",
+      "name": "Analyst",
+      "description": "Reads and exports analytical datasets",
+      "permissions": [
+        "analytics.read",
+        "analytics.export"
+      ]
+    },
+    {
+      "role": "asset_manager",
+      "name": "Asset manager",
+      "description": "Maintains the asset register",
+      "permissions": [
+        "assets.manage"
+      ]
+    },
+    {
+      "role": "duty_officer",
+      "name": "Duty officer",
+      "description": "Acknowledges and triages incidents",
+      "permissions": [
+        "incidents.acknowledge",
+        "incidents.report"
+      ]
+    },
+    {
+      "role": "incident_commander",
+      "name": "Incident commander",
+      "description": "Directs response, resolves and closes incidents",
+      "permissions": [
+        "incidents.resolve",
+        "incidents.close"
+      ]
+    },
+    {
+      "role": "records_manager",
+      "name": "Records manager",
+      "description": "Reviews and publishes controlled documents, manages retention, legal holds and disposal",
+      "permissions": [
+        "documents.review",
+        "documents.retention.manage",
+        "documents.legal_hold.manage"
+      ]
+    }
+  ],
+  "navigation": [
+    {
+      "key": "workspace",
+      "label": "Workspace",
+      "href": "/workspace/",
+      "icon": "layout-dashboard",
+      "audience": "staff",
+      "order": 10
+    },
+    {
+      "key": "work-inbox",
+      "label": "Work inbox",
+      "href": "/work/",
+      "icon": "inbox",
+      "audience": "staff",
+      "order": 20
+    },
+    {
+      "key": "assets",
+      "label": "Assets",
+      "href": "/assets/",
+      "icon": "boxes",
+      "audience": "staff",
+      "order": 30
+    },
+    {
+      "key": "incidents",
+      "label": "Incidents",
+      "href": "/incidents/",
+      "icon": "siren",
+      "audience": "staff",
+      "order": 40
+    },
+    {
+      "key": "documents",
+      "label": "Documents",
+      "href": "/documents/",
+      "icon": "file-text",
+      "audience": "staff",
+      "order": 50
+    },
+    {
+      "key": "zones",
+      "label": "Zones and map",
+      "href": "/zones/",
+      "icon": "map-pin",
+      "audience": "staff",
+      "order": 60
+    },
+    {
+      "key": "ai-workspace",
+      "label": "AI workspace",
+      "href": "/ai/",
+      "icon": "bot",
+      "audience": "staff",
+      "order": 800
+    },
+    {
+      "key": "administration",
+      "label": "Administration",
+      "href": "/admin/",
+      "icon": "settings",
+      "roles": [
+        "tenant_admin",
+        "auditor"
+      ],
+      "order": 900
+    },
+    {
+      "key": "disaster-recovery",
+      "label": "Disaster recovery",
+      "href": "/dr/",
+      "icon": "life-buoy",
+      "roles": [
+        "dr_operator",
+        "platform_admin",
+        "tenant_admin"
+      ],
+      "order": 950
+    }
+  ],
+  "workflows": [
+    {
+      "key": "incident-response",
+      "name": "Incident response",
+      "subject_type": "incident",
+      "definition": {
+        "allow_return": false,
+        "applicant_notifications": [],
+        "stages": [
+          {
+            "key": "acknowledge",
+            "name": "Acknowledge incident",
+            "type": "single",
+            "roles": [
+              "duty_officer"
+            ],
+            "sla_hours": 0.25,
+            "escalate_to_role": "incident_commander"
+          },
+          {
+            "key": "resolve",
+            "name": "Resolve incident",
+            "type": "single",
+            "roles": [
+              "incident_commander"
+            ],
+            "sla_hours": 8
+          }
+        ]
+      }
+    },
+    {
+      "key": "document-review",
+      "name": "Document review",
+      "subject_type": "document",
+      "definition": {
+        "allow_return": false,
+        "applicant_notifications": [],
+        "stages": [
+          {
+            "key": "records_review",
+            "name": "Records review",
+            "type": "single",
+            "roles": [
+              "records_manager"
+            ],
+            "sla_hours": 48,
+            "escalate_to_role": "tenant_admin"
+          }
+        ]
+      }
+    }
+  ],
+  "incident_categories": [
+    {
+      "key": "general",
+      "name": "General",
+      "description": "Incidents without a more specific category",
+      "workflow_key": "incident-response",
+      "notify_role": "duty_officer",
+      "response_targets": {
+        "critical": 15,
+        "warning": 60
+      }
+    }
+  ],
+  "dashboards": [
+    {
+      "key": "operations",
+      "title": "Operations overview",
+      "description": "Work waiting, incidents and assets across every active industry pack.",
+      "widgets": [
+        {
+          "id": "tasks-pending",
+          "title": "Workflow tasks waiting",
+          "type": "stat",
+          "dataset": "pending_tasks",
+          "value": {
+            "column": "pending",
+            "agg": "sum"
+          }
+        },
+        {
+          "id": "tasks-overdue",
+          "title": "Tasks past their deadline",
+          "type": "stat",
+          "dataset": "pending_tasks",
+          "value": {
+            "column": "overdue",
+            "agg": "sum"
+          }
+        },
+        {
+          "id": "incidents-open",
+          "title": "Incidents not yet acknowledged",
+          "type": "stat",
+          "dataset": "incidents_by_category",
+          "filters": {
+            "status": "open"
+          },
+          "value": {
+            "column": "incidents",
+            "agg": "sum"
+          }
+        },
+        {
+          "id": "incidents-by-category",
+          "title": "Incidents by category",
+          "type": "bar",
+          "dataset": "incidents_by_category",
+          "category": "category",
+          "value": {
+            "column": "incidents",
+            "agg": "sum"
+          }
+        },
+        {
+          "id": "assets-by-status",
+          "title": "Assets by lifecycle status",
+          "type": "bar",
+          "dataset": "asset_maintenance_status",
+          "category": "status",
+          "value": {
+            "column": "assets",
+            "agg": "sum"
+          }
+        },
+        {
+          "id": "tasks-by-stage",
+          "title": "Where work is waiting",
+          "type": "table",
+          "dataset": "pending_tasks",
+          "span": 2,
+          "columns": [
+            {
+              "column": "subject_type",
+              "label": "Subject"
+            },
+            {
+              "column": "stage_key",
+              "label": "Stage"
+            },
+            {
+              "column": "role",
+              "label": "Role"
+            },
+            {
+              "column": "pending",
+              "label": "Pending"
+            },
+            {
+              "column": "overdue",
+              "label": "Overdue"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "query_templates": [
+    "workflow_bottlenecks",
+    "incidents_by_severity",
+    "assets_maintenance_overview"
+  ],
+  "ai_tools": [
+    "kpi_summary",
+    "list_incidents",
+    "get_incident",
+    "workflow_bottlenecks",
+    "search_documents",
+    "run_query_template"
+  ],
+  "lifecycle": {
+    "upgrades_from": [
+      "1.0.0"
+    ],
+    "changes": [
+      "Adds controlled documents with the document-review workflow (records manager)",
+      "Adds zones and map layers (geospatial)",
+      "Adds the records manager role template"
+    ],
+    "on_deactivate": "The platform core cannot be deactivated."
+  }
+}

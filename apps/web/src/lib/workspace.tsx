@@ -121,6 +121,13 @@ export function subjectHref(subjectType: string, subjectId: string): string {
     case 'maintenance_request':
     case 'service_request':
       return `/maintenance/request/?id=${subjectId}`;
+    case 'work_order':
+      return `/maintenance/order/?id=${subjectId}`;
+    case 'document':
+      // A review task names the document version.
+      return `/documents/?version=${subjectId}`;
+    case 'purchase_request':
+      return `/procurement/?request=${subjectId}`;
     default:
       return '/work/';
   }

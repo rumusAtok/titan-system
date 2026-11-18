@@ -1,0 +1,31 @@
+# Alertmanager for the local TITAN stack (profile: observability).
+# Alerts are grouped and de-duplicated, then delivered as webhooks to the LOCAL test receiver
+# (webhook-sink): nothing is sent to an outside paging, chat or e-mail service. A real deployment
+# replaces the receivers with its on-call tooling (an explicit decision, see docs/runbooks).
+route:
+  receiver: platform-oncall
+  group_by: [alertname, service]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers: [severity="critical"]
+      receiver: platform-critical
+      group_wait: 10s
+      repeat_interval: 1h
+
+receivers:
+  - name: platform-oncall
+    webhook_configs:
+      - url: http://webhook-sink:8080/alertmanager/oncall
+        send_resolved: true
+  - name: platform-critical
+    webhook_configs:
+      - url: http://webhook-sink:8080/alertmanager/critical
+        send_resolved: true
+
+inhibit_rules:
+  # While a service is down, its latency and error alerts add nothing.
+  - source_matchers: [alertname="TitanServiceDown"]
+    target_matchers: [severity="warning"]
+    equal: [service]

@@ -88,6 +88,22 @@
         "description": "Raises service requests and follows their own"
       },
       {
+        "name": "records_manager",
+        "description": "Reviews and publishes controlled documents; manages retention and legal holds"
+      },
+      {
+        "name": "procurement_officer",
+        "description": "Maintains suppliers and items; reviews purchase requests"
+      },
+      {
+        "name": "storekeeper",
+        "description": "Receives goods, issues stock and records stock counts"
+      },
+      {
+        "name": "security_operator",
+        "description": "Watches cameras and maintains the camera register"
+      },
+      {
         "name": "dr_operator",
         "description": "Authorised to operate disaster-recovery controls"
       },
@@ -583,6 +599,110 @@
       ]
     },
     {
+      "username": "rex.records",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Rex",
+      "lastName": "Records",
+      "email": "rex.records@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "11111111-1111-4111-8111-111111111111"
+        ],
+        "department": [
+          "EXECUTIVE"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "records_manager"
+      ]
+    },
+    {
+      "username": "sara.security",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Sara",
+      "lastName": "Security",
+      "email": "sara.security@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "11111111-1111-4111-8111-111111111111"
+        ],
+        "department": [
+          "OPERATIONS"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "security_operator"
+      ]
+    },
+    {
+      "username": "owen.officer",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Owen",
+      "lastName": "Officer",
+      "email": "owen.officer@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "11111111-1111-4111-8111-111111111111"
+        ],
+        "department": [
+          "ENGINEERING"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "procurement_officer"
+      ]
+    },
+    {
+      "username": "sid.stores",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Sid",
+      "lastName": "Stores",
+      "email": "sid.stores@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "11111111-1111-4111-8111-111111111111"
+        ],
+        "department": [
+          "OPERATIONS"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "storekeeper"
+      ]
+    },
+    {
       "username": "bob.applicant",
       "enabled": true,
       "emailVerified": true,
@@ -976,6 +1096,136 @@
       ],
       "realmRoles": [
         "service_requester"
+      ]
+    },
+    {
+      "username": "rachel.records",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Rachel",
+      "lastName": "Records",
+      "email": "rachel.records@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "33333333-3333-4333-8333-333333333333"
+        ],
+        "department": [
+          "EXECUTIVE"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "records_manager"
+      ]
+    },
+    {
+      "username": "priya.procurement",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Priya",
+      "lastName": "Procurement",
+      "email": "priya.procurement@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "33333333-3333-4333-8333-333333333333"
+        ],
+        "department": [
+          "FINANCE"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "procurement_officer"
+      ]
+    },
+    {
+      "username": "stan.stores",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Stan",
+      "lastName": "Stores",
+      "email": "stan.stores@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "33333333-3333-4333-8333-333333333333"
+        ],
+        "department": [
+          "MAINTENANCE"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "storekeeper"
+      ]
+    },
+    {
+      "username": "dina.director",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Dina",
+      "lastName": "Director",
+      "email": "dina.director@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "33333333-3333-4333-8333-333333333333"
+        ],
+        "department": [
+          "FINANCE"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "department_head"
+      ]
+    },
+    {
+      "username": "sol.security",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Sol",
+      "lastName": "Security",
+      "email": "sol.security@titan.example",
+      "attributes": {
+        "tenant_id": [
+          "33333333-3333-4333-8333-333333333333"
+        ],
+        "department": [
+          "FACILITIES"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${DEMO_USER_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "security_operator"
       ]
     },
     {

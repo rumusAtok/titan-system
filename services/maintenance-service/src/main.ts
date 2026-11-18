@@ -1,4 +1,4 @@
-import { Controller, Get, HttpCode, Inject, Module, Param, Post } from '@nestjs/common';
+import { Controller, DefaultValuePipe, Get, HttpCode, Inject, Module, Param, ParseIntPipe, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, type Principal, RequireRoles } from '@titan/authentication';
 import { Capabilities, STAFF_ROLES } from '@titan/contracts';
@@ -12,8 +12,10 @@ import {
   ListRequests,
   ListWorkOrders,
   MaintenanceService,
+  MaintenanceSettings,
   PLANNING_ROLES,
 } from './maintenance.service.js';
+import { CompleteRound, CreateInspectionPlan, CreatePmPlan, PlanningService, SetActive } from './planning.service.js';
 
 @ApiTags('maintenance')
 @ApiBearerAuth()
@@ -105,12 +107,106 @@ class MaintenanceController {
   summary(@CurrentUser() user: Principal) {
     return this.maintenance.summary(user);
   }
+
+  @Get('settings')
+  @RequireRoles(...STAFF_ROLES)
+  settings(@CurrentUser() user: Principal) {
+    return this.maintenance.getSettings(user);
+  }
+
+  @Put('settings')
+  @RequireRoles(...PLANNING_ROLES)
+  @ApiOperation({ summary: 'Labour rate, currency and default parts store of the tenant' })
+  saveSettings(@CurrentUser() user: Principal, @ZBody(MaintenanceSettings) body: z.infer<typeof MaintenanceSettings>) {
+    return this.maintenance.saveSettings(user, body);
+  }
+}
+
+/** Preventive maintenance and inspection planning (same capability). */
+@ApiTags('maintenance-planning')
+@ApiBearerAuth()
+@Controller('planning')
+@RequireCapability(Capabilities.Maintenance)
+@RequireRoles(...STAFF_ROLES)
+class PlanningController {
+  constructor(@Inject(PlanningService) private readonly planning: PlanningService) {}
+
+  @Get('upcoming')
+  @ApiOperation({ summary: 'Preventive and inspection plans due within `days` days, and rounds waiting' })
+  upcoming(@CurrentUser() user: Principal, @Query('days', new DefaultValuePipe(30), ParseIntPipe) days: number) {
+    return this.planning.upcoming(user, Math.min(Math.max(days, 1), 365));
+  }
+
+  @Get('pm-plans')
+  pmPlans(@CurrentUser() user: Principal) {
+    return this.planning.listPmPlans(user);
+  }
+
+  @Post('pm-plans')
+  @RequireRoles(...PLANNING_ROLES)
+  @ApiOperation({ summary: 'Preventive plan: a work order is opened every interval_days, lead_days before it is due' })
+  createPm(@CurrentUser() user: Principal, @ZBody(CreatePmPlan) body: z.infer<typeof CreatePmPlan>) {
+    return this.planning.createPmPlan(user, body);
+  }
+
+  @Patch('pm-plans/:id')
+  @RequireRoles(...PLANNING_ROLES)
+  setPm(@CurrentUser() user: Principal, @Param('id', uuidParam) id: string, @ZBody(SetActive) body: z.infer<typeof SetActive>) {
+    return this.planning.setPmActive(user, id, body.active);
+  }
+
+  @Post('pm-plans/:id/generate')
+  @RequireRoles(...PLANNING_ROLES)
+  @ApiOperation({ summary: 'Open the work order for the next due date now' })
+  generatePm(@CurrentUser() user: Principal, @Param('id', uuidParam) id: string) {
+    return this.planning.generatePmNow(user, id);
+  }
+
+  @Get('inspection-plans')
+  inspectionPlans(@CurrentUser() user: Principal) {
+    return this.planning.listInspectionPlans(user);
+  }
+
+  @Post('inspection-plans')
+  @RequireRoles(...PLANNING_ROLES)
+  createInspection(@CurrentUser() user: Principal, @ZBody(CreateInspectionPlan) body: z.infer<typeof CreateInspectionPlan>) {
+    return this.planning.createInspectionPlan(user, body);
+  }
+
+  @Patch('inspection-plans/:id')
+  @RequireRoles(...PLANNING_ROLES)
+  setInspection(@CurrentUser() user: Principal, @Param('id', uuidParam) id: string, @ZBody(SetActive) body: z.infer<typeof SetActive>) {
+    return this.planning.setInspectionActive(user, id, body.active);
+  }
+
+  @Post('inspection-plans/:id/generate')
+  @RequireRoles(...PLANNING_ROLES)
+  generateRound(@CurrentUser() user: Principal, @Param('id', uuidParam) id: string) {
+    return this.planning.generateRoundNow(user, id);
+  }
+
+  @Get('rounds')
+  rounds(@CurrentUser() user: Principal, @Query('status') status?: string) {
+    return this.planning.listRounds(user, status && ['due', 'completed', 'skipped'].includes(status) ? status : undefined);
+  }
+
+  @Get('rounds/:id')
+  round(@CurrentUser() user: Principal, @Param('id', uuidParam) id: string) {
+    return this.planning.getRound(user, id);
+  }
+
+  @Post('rounds/:id/complete')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Record inspection results; each failed item raises a finding request' })
+  completeRound(@CurrentUser() user: Principal, @Param('id', uuidParam) id: string, @ZBody(CompleteRound) body: z.infer<typeof CompleteRound>) {
+    return this.planning.completeRound(user, id, body);
+  }
 }
 
 @Module({
   imports: [PlatformModule.forRoot()],
-  controllers: [MaintenanceController],
-  providers: [MaintenanceService],
+  controllers: [MaintenanceController, PlanningController],
+  providers: [MaintenanceService, PlanningService],
 })
 export class AppModule {}
 

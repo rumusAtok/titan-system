@@ -4,7 +4,7 @@ import { Readable } from 'node:stream';
 import type { JwtVerifier, Principal } from '@titan/authentication';
 import { createLogger } from '@titan/observability';
 import { describe, expect, it, vi } from 'vitest';
-import { createProxy } from './proxy.js';
+import { createProxy, createWebhookRelay } from './proxy.js';
 import { TokenBucketLimiter } from './rate-limit.js';
 import { buildUpstreams } from './upstreams.js';
 
@@ -176,7 +176,54 @@ describe('gateway proxy', () => {
 
   it('refuses an oversized request body', async () => {
     const { call } = setup(vi.fn() as unknown as typeof fetch);
-    const { res } = await call(request('POST', '/case/cases', { authorization: 'Bearer good' }, 'x'.repeat(7 * 1024 * 1024)));
+    const { res } = await call(request('POST', '/case/cases', { authorization: 'Bearer good' }, 'x'.repeat(9 * 1024 * 1024)));
     expect(res.statusCode).toBe(413);
+  });
+
+  it('passes through the headers that make a download safe', async () => {
+    const fetchImpl = vi.fn(async () => new Response('file', { status: 200, headers: { 'content-type': 'text/plain', 'x-content-sha256': 'abc', 'content-security-policy': "default-src 'none'", 'set-cookie': 'x=1' } }));
+    const { call } = setup(fetchImpl as unknown as typeof fetch);
+    const { res } = await call(request('GET', '/document/documents/x/versions/1/content', { authorization: 'Bearer good' }));
+    expect(res.headers['x-content-sha256']).toBe('abc');
+    expect(res.headers['content-security-policy']).toBe("default-src 'none'");
+    expect(res.headers['set-cookie']).toBeUndefined();
+  });
+});
+
+describe('webhook relay', () => {
+  const ID = '5be1586c-2a23-4b2d-99ef-ae153f2013d3';
+  function relay(fetchImpl: typeof fetch, perMinute = 600) {
+    const upstream = buildUpstreams({}).get('integration')!;
+    const handler = createWebhookRelay({ upstream, limiter: new TokenBucketLimiter(perMinute, perMinute), logger: createLogger('test'), fetchImpl });
+    return async (req: IncomingMessage) => {
+      const res = new FakeResponse();
+      const finished = new Promise<void>((resolve) => res.once('finish', () => resolve()));
+      await handler(req, res as unknown as ServerResponse);
+      await finished;
+      return res;
+    };
+  }
+
+  it('forwards the raw body and signature headers, without a token and without the authorization header', async () => {
+    const fetchImpl = vi.fn(async () => json(202, { status: 'accepted' }));
+    const call = relay(fetchImpl as unknown as typeof fetch);
+    const res = await call(request('POST', `/${ID}`, { 'content-type': 'application/json', 'x-titan-signature': 'sha256=ab', 'x-titan-timestamp': '1800000000', 'x-titan-event-id': 'e1', authorization: 'Bearer stolen' }, '{"title":"x"}'));
+    expect(res.statusCode).toBe(202);
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit & { headers: Record<string, string>; body: Buffer }];
+    expect(url).toBe(`http://integration-service:3000/inbound/${ID}`);
+    expect(init.body.toString()).toBe('{"title":"x"}');
+    expect(init.headers['x-titan-signature']).toBe('sha256=ab');
+    expect(init.headers.authorization).toBeUndefined();
+  });
+
+  it('accepts only POST to a well-formed endpoint id, within size and rate limits', async () => {
+    const fetchImpl = vi.fn(async () => json(202, {}));
+    expect((await relay(fetchImpl as unknown as typeof fetch)(request('POST', '/../../api/tenant'))).statusCode).toBe(404);
+    expect((await relay(fetchImpl as unknown as typeof fetch)(request('GET', `/${ID}`))).statusCode).toBe(405);
+    expect((await relay(fetchImpl as unknown as typeof fetch)(request('POST', `/${ID}`, {}, 'x'.repeat(300 * 1024)))).statusCode).toBe(413);
+    const limited = relay(fetchImpl as unknown as typeof fetch, 1);
+    await limited(request('POST', `/${ID}`, {}, '{}'));
+    expect((await limited(request('POST', `/${ID}`, {}, '{}'))).statusCode).toBe(429);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 });

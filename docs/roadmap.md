@@ -1,6 +1,6 @@
 # Future development roadmap
 
-Ordered by what reduces the most risk first. Nothing here is implemented; the
+Ordered by what reduces the most risk first. Items marked *(done 2026-11-18)* were implemented and verified locally (see the verification report); everything else is not implemented; the
 [risk register](risk-register.md) explains why each item matters (references in brackets).
 
 ## 1. Make the existing release trustworthy outside one workstation
@@ -17,7 +17,7 @@ Ordered by what reduces the most risk first. Nothing here is implemented; the
 
 | Item | Outcome |
 | --- | --- |
-| Physical backups with WAL to object storage, and a point-in-time recovery drill [R5] | Restore to a chosen minute, measured |
+| Physical backups with WAL to object storage, and a point-in-time recovery drill [R5] | *PITR drill done 2026-11-18 on one host.* Remaining: WAL and base backups in off-site object storage |
 | Backup age and replication lag alerts; PostgreSQL and NATS exporters | The gaps listed in the monitoring guide are closed |
 | Two-cluster recovery rehearsal [R4] | Failover and failback in a real staging pair, with fencing that does not rely on the failed site, DNS switch and measured RTO and RPO |
 | Synchronous replication decision per service [R2] | Documented choice, tested |
@@ -28,22 +28,22 @@ Ordered by what reduces the most risk first. Nothing here is implemented; the
 | Item | Outcome |
 | --- | --- |
 | OTLP span export and a trace backend | Traces across HTTP and events, linked from logs |
-| Alertmanager with routes and on-call ownership | Alerts reach people |
+| Alertmanager with routes and on-call ownership | *Alertmanager and routes done 2026-11-18 (local receiver).* Remaining: real on-call receivers and ownership |
 | Service-level objectives for the two core flows | Error budgets instead of raw thresholds |
 
 ## 4. The remaining services
 
-In suggested order; each follows the same pattern (own database, RLS, outbox, role checks, tests).
+Minimum slices of all of these now exist (ADR-0015). What would make each useful beyond the slice:
 
 | Service | First useful slice |
 | --- | --- |
-| document-service | Attachments on cases and incidents in object storage, virus-scan hook, retention classes |
-| report-service | Scheduled PDF and spreadsheet reports from the analytical read models |
-| maintenance-service (minimum slice done in v3) | Preventive schedules from asset maintenance dates, spare parts, labour costing, inspection plans [P12] |
-| geospatial-service | Spatial queries (PostGIS), catchments and zones, a configurable base map |
-| integration-service | Inbound and outbound adapters with an anti-corruption layer; the real e-mail adapter belongs here and needs authorisation before it sends anything |
-| procurement-service | Requisition to award on the workflow engine |
-| video-service | Camera registry and event markers; no analytics until privacy rules are agreed |
+| document-service (slice done) | *ClamAV hook and full-text search done 2026-11-18.* Remaining: object storage instead of database blobs; PDF text and OCR; case attachments moved here; retention periods set by the records policy |
+| report-service (slice done) | *PDF and Excel output done 2026-11-18.* Remaining: unattended scheduled runs under an explicitly delegated, audited identity |
+| maintenance-service | *Preventive plans, inspection plans and rounds, parts used and labour cost done 2026-11-18.* Remaining: plans from pack templates, parts reservation before the work starts, a planning calendar |
+| geospatial-service (slice done) | *Backfill, zones on the GIS map and a digital twin of the asset hierarchy done 2026-11-18.* Remaining: PostGIS and spatial indexes; geometry and 3D models of real assets |
+| integration-service (slice done) | *E-mail over SMTP to a local catcher done 2026-11-18.* Remaining: adapters for specific external systems (open data, CMMS, BMS); a real mail relay, which needs authorisation; key management for webhook secrets [S16] |
+| procurement-service (slice done) | *Quotations and award, budgets and cost centres, parts booked for work orders done 2026-11-18.* Remaining: supplier portal or EDI, reservation before work starts |
+| video-service (slice done) | *In-browser HLS playback against a local test stream done 2026-11-18.* Remaining: a real VMS with short-lived stream URLs and clip export [S18]; no analytics until privacy rules are agreed |
 
 ## 4b. Industry platform (after v3)
 

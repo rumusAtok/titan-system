@@ -31,5 +31,5 @@ app.kubernetes.io/instance: {{ .root.Release.Name }}
 
 {{/* Short role name used for database users and secrets: "case-service" -> "case". */}}
 {{- define "titan.shortName" -}}
-{{- . | trimSuffix "-service" | replace "data-pipeline" "pipeline" | replace "ai-gateway" "ai" -}}
+{{- . | trimSuffix "-service" | replace "data-pipeline" "pipeline" | replace "ai-gateway" "ai" | replace "geospatial" "geo" -}}
 {{- end -}}

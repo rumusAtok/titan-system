@@ -136,6 +136,13 @@ export async function streamMessageCount(stream: string): Promise<number> {
   return (await jsm.streams.info(stream)).state.messages;
 }
 
+/** Messages stored in the stream under one subject (unaffected by other traffic on a busy stack). */
+export async function subjectMessageCount(stream: string, subject: string): Promise<number> {
+  const jsm = await jetstreamManager(await natsConnection());
+  const info = await jsm.streams.info(stream, { subjects_filter: subject });
+  return (info.state.subjects as Record<string, number> | undefined)?.[subject] ?? 0;
+}
+
 /** Rebuilds the original event envelope from its audit record. */
 export function envelopeFromAudit(record: any, tenantId: string) {
   return {

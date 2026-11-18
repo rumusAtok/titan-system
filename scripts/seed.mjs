@@ -7,6 +7,8 @@
 // workflows, forms, asset categories, sensor profiles, alert rules, incident
 // categories and request types. The seed then adds organisation data, assets
 // and devices. Everything created here is fictional demonstration data.
+import { seedModules } from './seed-modules.mjs';
+import { seedPlanning } from './seed-planning.mjs';
 import { api, ApiError, claimsOf, rawApi, TENANT_A, TENANT_B, TENANT_C, TENANT_D, tokenFor, waitFor } from './lib/titan-client.mjs';
 
 const created = [];
@@ -49,8 +51,16 @@ const TENANTS = {
     slug: 'riverbend',
     name: 'Riverbend City Council',
     origin: [3.07, 101.52],
-    packs: [{ id: 'public-services' }, { id: 'disaster-infrastructure' }],
-    expect: { workflows: ['incident-response', 'building-permit', 'event-permit'], forms: ['building-permit', 'event-permit'], categories: ['PUMP_STATION', 'FLOOD_GATE', 'DRAINAGE', 'RIVER_GAUGE'], rules: ['High water level'], iot: true },
+    packs: [
+      { id: 'platform-core', upgrade: true },
+      { id: 'public-services' },
+      { id: 'disaster-infrastructure' },
+      { id: 'procurement-inventory', upgrade: true },
+      { id: 'operational-reporting' },
+      { id: 'integration-hub' },
+      { id: 'video-monitoring' },
+    ],
+    expect: { workflows: ['incident-response', 'building-permit', 'event-permit', 'document-review', 'purchase-approval'], forms: ['building-permit', 'event-permit'], categories: ['PUMP_STATION', 'FLOOD_GATE', 'DRAINAGE', 'RIVER_GAUGE'], rules: ['High water level'], iot: true },
     departments: GOVERNMENT_DEPARTMENTS,
     sites: [],
     assets: [
@@ -74,8 +84,8 @@ const TENANTS = {
     slug: 'northfield',
     name: 'Northfield District Authority',
     origin: [5.41, 100.34],
-    packs: [{ id: 'public-services' }, { id: 'disaster-infrastructure' }],
-    expect: { workflows: ['incident-response', 'building-permit', 'event-permit'], forms: ['building-permit', 'event-permit'], categories: ['PUMP_STATION', 'RIVER_GAUGE'], rules: ['High water level'], iot: true },
+    packs: [{ id: 'platform-core', upgrade: true }, { id: 'public-services' }, { id: 'disaster-infrastructure' }],
+    expect: { workflows: ['incident-response', 'building-permit', 'event-permit', 'document-review'], forms: ['building-permit', 'event-permit'], categories: ['PUMP_STATION', 'RIVER_GAUGE'], rules: ['High water level'], iot: true },
     departments: GOVERNMENT_DEPARTMENTS,
     sites: [],
     assets: [
@@ -90,9 +100,17 @@ const TENANTS = {
     slug: 'meridian',
     name: 'Meridian Industrial Group',
     origin: [1.47, 103.76],
-    packs: [{ id: 'manufacturing' }, { id: 'facilities' }],
+    packs: [
+      { id: 'platform-core', upgrade: true },
+      { id: 'manufacturing' },
+      { id: 'facilities' },
+      { id: 'procurement-inventory', upgrade: true },
+      { id: 'operational-reporting' },
+      { id: 'integration-hub' },
+      { id: 'video-monitoring' },
+    ],
     expect: {
-      workflows: ['incident-response', 'equipment-incident-response', 'maintenance-approval', 'facility-request-approval', 'inspection-follow-up'],
+      workflows: ['incident-response', 'equipment-incident-response', 'maintenance-approval', 'facility-request-approval', 'inspection-follow-up', 'document-review', 'purchase-approval'],
       forms: [],
       categories: ['CNC_MACHINE', 'CONVEYOR', 'PRODUCTION_LINE', 'BUILDING', 'HVAC_UNIT', 'ELEVATOR'],
       rules: ['High machine vibration'],
@@ -137,8 +155,8 @@ const TENANTS = {
     slug: 'harbourline',
     name: 'Harbourline Properties',
     origin: [22.29, 114.16],
-    packs: [{ id: 'facilities' }],
-    expect: { workflows: ['incident-response', 'facility-request-approval'], forms: [], categories: ['BUILDING'], rules: [], requestTypes: ['facility-service-request'], iot: false },
+    packs: [{ id: 'platform-core', upgrade: true }, { id: 'facilities' }],
+    expect: { workflows: ['incident-response', 'facility-request-approval', 'document-review'], forms: [], categories: ['BUILDING'], rules: [], requestTypes: ['facility-service-request'], iot: false },
     departments: [{ code: 'OPERATIONS', name: 'Operations' }, { code: 'EXECUTIVE', name: 'Executive Office' }],
     sites: [{ code: 'HBL-TOWER', name: 'Harbourline Tower', kind: 'building', offset: [0, 0] }],
     assets: [{ code: 'HBL-TOWER', name: 'Harbourline Tower', category_code: 'BUILDING', status: 'active', condition: 'good', offset: [0, 0], due: 100, site: 'HBL-TOWER', attributes: { floor_area_m2: 18000, floors: 22, year_built: 2008, use: 'office', synthetic: true } }],
@@ -156,8 +174,15 @@ async function activatePacks(tenant) {
   const current = await api(admin, 'GET', '/api/tenant/packs');
   for (const pack of tenant.packs) {
     const have = current.find((p) => p.pack_id === pack.id);
-    // An existing activation is left as it is (whatever its version): the seed never upgrades or re-enables a pack.
-    if (have) continue;
+    // An existing activation is left as it is (whatever its version): the seed never re-enables a pack, and upgrades
+    // only the packs marked `upgrade` (the platform core), along a path the pack itself declares.
+    if (have) {
+      if (pack.upgrade && have.status === 'active' && have.upgrade_available) {
+        const result = await api(admin, 'POST', `/api/tenant/packs/${pack.id}/activate`, { version: have.latest_version });
+        note(`pack ${pack.id} upgraded ${have.version} -> ${result.pack.version}`);
+      }
+      continue;
+    }
     const result = await api(admin, 'POST', `/api/tenant/packs/${pack.id}/activate`, pack.version ? { version: pack.version } : {});
     note(`pack ${pack.id}@${result.pack.version}`);
   }
@@ -165,7 +190,10 @@ async function activatePacks(tenant) {
   const has = async (path, field, wanted) => {
     if (!wanted?.length) return true;
     const res = await rawApi(admin, 'GET', path);
-    if (res.status !== 200) return res.status === 502 || res.status === 503 ? 'unavailable' : false;
+    if (res.status === 502 || res.status === 503) return 'unavailable';
+    // The tenant has switched the capability off itself (e.g. deactivated the pack): nothing to wait for.
+    if (res.status === 403 && res.body?.error?.code === 'capability_disabled') return 'unavailable';
+    if (res.status !== 200) return false;
     const present = new Set(res.body.map((r) => r[field]));
     return wanted.every((w) => present.has(w));
   };
@@ -242,7 +270,7 @@ async function seedTenant(tenantId, tenant) {
     return s === 403 ? null : s;
   }, { timeoutMs: 30_000, intervalMs: 1_000, what: `the iot capability of ${tenant.slug} to reach device-service` }).catch(() => 403);
   if (status !== 200) {
-    console.log('  (iot profile not running: devices skipped)');
+    console.log('  (iot capability not active or iot profile not running: devices skipped)');
     return;
   }
   if (tenant.devices.some((d) => d.profile_key)) {
@@ -383,6 +411,15 @@ async function seedMemberships() {
     ['maya.admin', 'tess.technician', 'MAINTENANCE', 'Maintenance technician'],
     ['maya.admin', 'fred.facilities', 'FACILITIES', 'Facility manager'],
     ['maya.admin', 'rita.requester', 'FINANCE', 'Accountant'],
+    ['adam.admin', 'rex.records', 'EXECUTIVE', 'Records manager'],
+    ['adam.admin', 'sara.security', 'OPERATIONS', 'Security operator'],
+    ['adam.admin', 'owen.officer', 'ENGINEERING', 'Procurement officer'],
+    ['adam.admin', 'sid.stores', 'OPERATIONS', 'Storekeeper'],
+    ['maya.admin', 'rachel.records', 'EXECUTIVE', 'Records manager'],
+    ['maya.admin', 'priya.procurement', 'FINANCE', 'Procurement officer'],
+    ['maya.admin', 'stan.stores', 'MAINTENANCE', 'Storekeeper'],
+    ['maya.admin', 'dina.director', 'FINANCE', 'Finance director'],
+    ['maya.admin', 'sol.security', 'FACILITIES', 'Security operator'],
   ];
   const admins = [...new Set(people.map((p) => p[0]))];
   const existing = {};
@@ -403,6 +440,8 @@ try {
   console.log('Seeding synthetic demonstration data through the API gateway...');
   for (const [tenantId, tenant] of Object.entries(TENANTS)) await seedTenant(tenantId, tenant);
   await seedMemberships();
+  await seedModules(note);
+  await seedPlanning(note);
   console.log('\nAI knowledge base');
   await seedDocuments('adam.admin', FLOOD_DOCUMENTS);
   await seedDocuments('brian.admin', FLOOD_DOCUMENTS);

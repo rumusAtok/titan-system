@@ -153,7 +153,8 @@ describe('Facilities: service request to completed work', () => {
 
   it('the work order keeps its own history, and the audit trail has every step', async () => {
     const detail = await api(ADMIN, 'GET', `/api/maintenance/work-orders/${workOrder.id}`);
-    assert.deepEqual(detail.events.map((e: any) => e.entry_type), ['created', 'assigned', 'started', 'completed']);
+    // Labour hours were recorded, so the cost at the tenant's labour rate is part of the history.
+    assert.deepEqual(detail.events.map((e: any) => e.entry_type), ['created', 'assigned', 'started', 'completed', 'cost']);
     assert.equal(detail.request.reference_no, request.reference_no);
     await waitFor(async () => {
       const types = new Set((await api(ADMIN, 'GET', `/api/audit/audit?aggregate_id=${workOrder.id}&limit=50`)).items.map((r: any) => r.event_type));

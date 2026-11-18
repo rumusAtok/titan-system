@@ -170,6 +170,8 @@ export function WorkOrderDetail({ id }: { id: string }) {
   const [summary, setSummary] = useState('');
   const [hours, setHours] = useState('');
   const [condition, setCondition] = useState('');
+  const [parts, setParts] = useState<{ sku: string; quantity: string }[]>([]);
+  const items = useQuery({ queryKey: ['procurement', 'items'], queryFn: () => api<any[]>('/api/procurement/items'), retry: false });
   const refresh = () => Promise.all(['maintenance', 'assets', 'incident'].map((k) => client.invalidateQueries({ queryKey: [k] })));
   const act = useMutation({ mutationFn: (args: { path: string; body?: unknown }) => api(`/api/maintenance/work-orders/${id}/${args.path}`, { method: 'POST', body: args.body }), onSuccess: refresh });
   const planner = hasRole(...PLANNING_ROLES);
@@ -194,8 +196,17 @@ export function WorkOrderDetail({ id }: { id: string }) {
                   ['Repair time', w.repair_hours === null ? '—' : `${w.repair_hours} h`],
                   ['Labour', w.labor_hours === null ? '—' : `${w.labor_hours} h`],
                   ['Condition after', w.condition_after ? titleCase(w.condition_after) : '—'],
+                  ['Estimated', w.estimated_hours === null ? '—' : `${w.estimated_hours} h`],
+                  ['Labour cost', w.labor_cost === null ? '—' : `${Number(w.labor_cost).toFixed(2)} ${w.cost_currency} (${w.labor_rate}/h)`],
+                  ['Parts cost', w.parts.length ? `${Number(w.parts_cost).toFixed(2)} ${w.cost_currency ?? ''}` : '—'],
                 ]}
               />
+              {w.checklist.length > 0 && (
+                <div className="mt-3"><h3 className="text-sm font-semibold">Checklist (preventive plan)</h3><ul className="list-disc pl-5 text-sm">{w.checklist.map((c: string) => <li key={c}>{c}</li>)}</ul></div>
+              )}
+              {w.parts.length > 0 && (
+                <div className="mt-3"><h3 className="text-sm font-semibold">Parts used</h3><ul className="text-sm">{w.parts.map((x: any, n: number) => <li key={n}>{x.quantity} x {x.sku} from {x.location} · {x.booked ? <Badge tone="ok">Booked out{x.unit_cost !== undefined ? ` at ${x.unit_cost}` : ''}</Badge> : x.error ? <Badge tone="danger">Not booked: {x.error}</Badge> : <Badge>Waiting for stores</Badge>}</li>)}</ul></div>
+              )}
               {w.completion_summary && <p className="mt-3 text-sm text-ink">{w.completion_summary}</p>}
             </Card>
             <Card title="Actions">
@@ -222,9 +233,21 @@ export function WorkOrderDetail({ id }: { id: string }) {
                 )}
                 {w.status === 'assigned' && (mine || planner) && <Button variant="primary" onClick={() => act.mutate({ path: 'start' })} disabled={act.isPending}>Start work</Button>}
                 {w.status === 'in_progress' && (mine || planner) && (
-                  <form className="space-y-2" onSubmit={(e) => { e.preventDefault(); act.mutate({ path: 'complete', body: { summary, labor_hours: hours === '' ? null : Number(hours), condition_after: condition || null } }); }}>
+                  <form className="space-y-2" onSubmit={(e) => { e.preventDefault(); act.mutate({ path: 'complete', body: { summary, labor_hours: hours === '' ? null : Number(hours), condition_after: condition || null, parts: parts.filter((x) => x.sku && Number(x.quantity) > 0).map((x) => ({ sku: x.sku, quantity: Number(x.quantity) })) } }); }}>
                     <Field label="What was done" required>{(p) => <textarea {...p} className={inputClass} rows={3} value={summary} onChange={(e) => setSummary(e.target.value)} maxLength={4000} />}</Field>
                     <Field label="Labour hours">{(p) => <input {...p} className={inputClass} type="number" min={0} step={0.25} value={hours} onChange={(e) => setHours(e.target.value)} />}</Field>
+                    <fieldset className="space-y-1">
+                      <legend className="text-sm font-medium">Parts used</legend>
+                      {items.isError && <p className="text-xs text-ink-muted">Stores are not available for your organisation; parts can still be listed by SKU.</p>}
+                      {parts.map((x, i) => (
+                        <div key={i} className="flex gap-2">
+                          <input aria-label={`Part ${i + 1} SKU`} list="skus" className={inputClass} value={x.sku} placeholder="SKU" onChange={(e) => setParts(parts.map((y, j) => (j === i ? { ...y, sku: e.target.value.toUpperCase() } : y)))} />
+                          <input aria-label={`Part ${i + 1} quantity`} type="number" min={0} step="any" className={`${inputClass} w-24`} value={x.quantity} onChange={(e) => setParts(parts.map((y, j) => (j === i ? { ...y, quantity: e.target.value } : y)))} />
+                        </div>
+                      ))}
+                      <datalist id="skus">{(items.data ?? []).map((it) => <option key={it.sku} value={it.sku}>{it.name} ({it.on_hand} on hand)</option>)}</datalist>
+                      <Button type="button" onClick={() => setParts([...parts, { sku: '', quantity: '1' }])}>Add part</Button>
+                    </fieldset>
                     {w.asset && (
                       <Field label="Asset condition afterwards">
                         {(p) => (

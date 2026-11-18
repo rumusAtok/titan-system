@@ -141,6 +141,9 @@ export class IncidentService implements OnApplicationBootstrap {
         'maintenance.request.submitted.v1',
         'maintenance.work_order.created.v1',
         'maintenance.work_order.completed.v1',
+        'integration.incident.reported.v1',
+        'geo.incident.in_zone.v1',
+        'video.marker.created.v1',
       ],
       handler: (event, q) => this.onEvent(event, q),
     });
@@ -506,6 +509,46 @@ export class IncidentService implements OnApplicationBootstrap {
         const p = event.payload as EventPayload<'maintenance.work_order.completed.v1'>;
         // The work being finished does not resolve the incident: the responsible role confirms that in its response process.
         await this.maintenanceNote(q, p.origin_type, p.origin_id, `Work order ${p.reference_no} completed by ${p.completed_by_username}: ${p.summary}`);
+        return;
+      }
+      // A verified webhook from an external system (integration-service checked its signature).
+      case 'integration.incident.reported.v1': {
+        const p = event.payload as EventPayload<'integration.incident.reported.v1'>;
+        const category = (p.category ? await this.category(q, p.category) : null) ?? (await this.category(q, DEFAULT_INCIDENT_CATEGORY)) ?? GENERAL;
+        const incident = await this.open(
+          q,
+          event.tenant_id,
+          {
+            title: p.title,
+            description: p.description,
+            severity: p.severity,
+            deviceId: null,
+            assetId: null,
+            siteId: null,
+            category,
+            source: { type: 'external', id: `${p.endpoint_id}:${p.external_id}`.slice(0, 200) },
+          },
+          { id: null, username: null },
+        );
+        if (!incident) return; // the same external report again
+        await this.timeline(q, incident, 'note', `Reported through integration endpoint "${p.endpoint_name}" (external id ${p.external_id}).`);
+        if (p.category && category.key !== p.category) {
+          await this.timeline(q, incident, 'note', `The report named the category '${p.category}', which is not configured; the incident was filed as ${category.key}.`);
+        }
+        await this.notifyCreated(q, incident, category.notify_role);
+        return;
+      }
+      case 'geo.incident.in_zone.v1': {
+        const p = event.payload as EventPayload<'geo.incident.in_zone.v1'>;
+        const incident = await q.maybeOne<IncidentRow>(`SELECT ${COLUMNS} FROM incidents WHERE id = $1`, [p.incident_id]);
+        if (incident) await this.timeline(q, incident, 'location', `Located inside zone ${p.zone_code} (${p.zone_name}) at ${p.latitude.toFixed(5)}, ${p.longitude.toFixed(5)}`);
+        return;
+      }
+      case 'video.marker.created.v1': {
+        const p = event.payload as EventPayload<'video.marker.created.v1'>;
+        if (!p.incident_id) return;
+        const incident = await q.maybeOne<IncidentRow>(`SELECT ${COLUMNS} FROM incidents WHERE id = $1`, [p.incident_id]);
+        if (incident) await this.timeline(q, incident, 'video', `Video marker "${p.label}" at ${p.at}`);
         return;
       }
     }

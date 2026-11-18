@@ -15,6 +15,10 @@ export const Capabilities = {
   CaseManagement: 'case_management',
   Iot: 'iot',
   Maintenance: 'maintenance',
+  Procurement: 'procurement',
+  Reporting: 'reporting',
+  Integrations: 'integrations',
+  Video: 'video',
 } as const;
 
 export type Capability = (typeof Capabilities)[keyof typeof Capabilities];
@@ -38,6 +42,8 @@ export const CAPABILITY_CATALOG: readonly CapabilityInfo[] = [
   { key: 'audit', name: 'Audit', description: 'Append-only record of business and security events', layer: 'core', services: ['audit-service'] },
   { key: 'analytics', name: 'Analytics', description: 'Registered analytical datasets and approved queries', layer: 'core', services: ['analytics-service', 'data-pipeline-service'] },
   { key: 'ai', name: 'AI assistant', description: 'Optional, permission-aware assistant', layer: 'core', services: ['ai-gateway-service'] },
+  { key: 'documents', name: 'Documents', description: 'Controlled documents with versions, retention classes, legal hold and links to records', layer: 'core', services: ['document-service'] },
+  { key: 'geospatial', name: 'Geospatial', description: 'Zones and geofences, spatial queries over assets, devices and incidents', layer: 'core', services: ['geospatial-service'] },
   // Layer B: reusable business capabilities, activated by packs.
   {
     key: Capabilities.CaseManagement,
@@ -59,6 +65,34 @@ export const CAPABILITY_CATALOG: readonly CapabilityInfo[] = [
     description: 'Maintenance and service requests, approval, work orders',
     layer: 'capability',
     services: ['maintenance-service'],
+  },
+  {
+    key: Capabilities.Procurement,
+    name: 'Procurement and inventory',
+    description: 'Suppliers, stock items and levels, purchase requests with approval, purchase orders, goods receipt',
+    layer: 'capability',
+    services: ['procurement-service'],
+  },
+  {
+    key: Capabilities.Reporting,
+    name: 'Reporting',
+    description: 'Report definitions over approved datasets, generated CSV and printable reports, due reminders',
+    layer: 'capability',
+    services: ['report-service'],
+  },
+  {
+    key: Capabilities.Integrations,
+    name: 'Integrations',
+    description: 'Signed inbound webhooks and outbound event subscriptions to allow-listed endpoints',
+    layer: 'capability',
+    services: ['integration-service'],
+  },
+  {
+    key: Capabilities.Video,
+    name: 'Video',
+    description: 'Camera registry, stream session and recording metadata, incident markers (no video analytics)',
+    layer: 'capability',
+    services: ['video-service'],
   },
 ];
 

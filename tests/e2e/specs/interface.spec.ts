@@ -16,9 +16,11 @@ test.describe('role-based navigation', () => {
     await login(page, 'victor.validator');
     // Navigation comes from the tenant's industry packs (TITAN v3): the universal core first,
     // then public services and disaster/infrastructure management. The v2 entries are all still there.
+    // Documents and zones (platform core 1.1) and reports are for all staff; procurement, integrations
+    // and cameras are limited to their roles and therefore absent here.
     await expect(navLinks(page)).toHaveText([
-      'Workspace', 'Work inbox', 'Assets', 'Incidents',
-      'Executive dashboard', 'Applications', 'Review inbox', 'IoT operations', 'GIS operations', 'AI workspace',
+      'Workspace', 'Work inbox', 'Assets', 'Digital twin', 'Incidents', 'Documents', 'Zones and map',
+      'Executive dashboard', 'Applications', 'Review inbox', 'IoT operations', 'GIS operations', 'Reports', 'AI workspace',
     ]);
   });
 
