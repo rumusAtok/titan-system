@@ -59,3 +59,34 @@ describe('hoursBetween', () => {
     expect(hoursBetween(null, new Date())).toBeNull();
   });
 });
+
+describe('planning', () => {
+  it('moves the due date one interval on, skipping periods that were missed', async () => {
+    const { nextDueAfter } = await import('./rules.js');
+    expect(nextDueAfter('2026-11-10', 30, '2026-11-18')).toBe('2026-12-10');
+    expect(nextDueAfter('2026-01-01', 30, '2026-11-18')).toBe('2026-11-27'); // 1 Jan + 11 x 30 days
+    expect(nextDueAfter('2026-11-18', 7, '2026-11-18')).toBe('2026-11-25');
+  });
+
+  it('evaluates an inspection checklist: failures, out-of-range numbers, and incomplete answers', async () => {
+    const { evaluateChecklist } = await import('./rules.js');
+    const items = [
+      { key: 'guard', question: 'Safety guard in place', kind: 'pass_fail' as const },
+      { key: 'temp', question: 'Bearing temperature', kind: 'number' as const, min: 0, max: 70, unit: '°C' },
+    ];
+    expect(evaluateChecklist(items, { guard: true, temp: 55 })).toEqual({ ok: true, failures: [] });
+    const out = evaluateChecklist(items, { guard: false, temp: 82 });
+    expect(out.ok && out.failures.map((f) => f.key)).toEqual(['guard', 'temp']);
+    expect(out.ok && out.failures[1]!.reason).toBe('82 °C is above the maximum of 70 °C');
+    expect(evaluateChecklist(items, { guard: true }).ok).toBe(false);
+    expect(evaluateChecklist(items, { guard: 'yes', temp: 1 }).ok).toBe(false);
+    expect(evaluateChecklist(items, { guard: true, temp: 1, extra: 2 }).ok).toBe(false);
+  });
+
+  it('prices labour exactly', async () => {
+    const { laborCost } = await import('./rules.js');
+    expect(laborCost(2.5, 45)).toBe(112.5);
+    expect(laborCost(0.1, 33.33)).toBe(3.33);
+    expect(laborCost(null, 45)).toBeNull();
+  });
+});

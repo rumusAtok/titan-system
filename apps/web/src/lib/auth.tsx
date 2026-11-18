@@ -128,5 +128,8 @@ export function useAuth(): AuthContextValue {
 export const STAFF_ROLES = [
   'validation_officer', 'technical_officer', 'department_head', 'final_approver', 'duty_officer', 'incident_commander',
   'asset_manager', 'iot_operator', 'analyst', 'auditor', 'tenant_admin',
+  // TITAN v3 and later modules (same list as STAFF_ROLES in @titan/contracts).
+  'production_supervisor', 'maintenance_planner', 'maintenance_technician', 'facility_manager',
+  'records_manager', 'procurement_officer', 'storekeeper', 'security_operator',
 ];
 export const REVIEWER_ROLES = ['validation_officer', 'technical_officer', 'department_head', 'final_approver'];

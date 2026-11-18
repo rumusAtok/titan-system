@@ -2,7 +2,8 @@
 
 TITAN is a multi-tenant, industry-agnostic operations platform built as independently
 deployable microservices. Since v3 it has three layers: a universal core, switchable business
-capabilities (`case_management`, `iot`, `maintenance`) and declarative industry packs
+capabilities (`case_management`, `iot`, `maintenance`, `procurement`, `reporting`,
+`integrations`, `video`) and declarative industry packs
 (`docs/architecture/industry-packs.md`). This file holds the durable rules; `PROGRESS.md` holds
 current state.
 
@@ -66,6 +67,15 @@ or integration as passing unless it was actually executed; put the evidence in
     `workflow.start.requested.v1`.
 14. **Adding a field to an existing event payload** makes it optional (old events stay valid);
     anything else needs a new `.vN` type.
+15. **Nothing leaves the machine by default.** Outbound webhooks go only to hosts in
+    `WEBHOOK_ALLOWED_HOSTS` (default: the local `webhook-sink`); do not add a real destination,
+    e-mail adapter or supplier connection without the user's authorisation. The public
+    `/hooks/<id>` route is authenticated by HMAC signature only, never by trusting the caller.
+16. **A service acting for a user calls other services with that user's token** (report-service
+    reading analytics), never with stored credentials of its own. Unattended work needs an
+    explicit, audited service identity and is a design decision, not a shortcut.
+17. **Video is metadata only.** No video is stored, relayed or analysed; a stream URL is revealed
+    only inside a viewing session with a stated purpose, which is logged.
 
 ## Conventions
 
@@ -90,7 +100,8 @@ Copy-Item .env.example .env ; npm install
 # build (type-check) all Node services
 npm run build
 
-# start / stop the stack (profiles: core iot analytics ai observability dr-lab)
+# start / stop the stack (profiles: core iot analytics ai observability dr-lab scan)
+# core also starts the local helpers: mailpit (e-mail inbox :8025), webhook-sink (:8099), video-lab (HLS :8888)
 docker compose --profile core --profile iot up -d --build
 docker compose --profile core --profile iot down          # keeps data volumes
 node scripts/identity-sync.mjs                            # add demo users/roles missing from an existing Keycloak
@@ -106,12 +117,13 @@ npm run test:integration                                  # integration + securi
 npm run test:a                                            # one mandatory test: test:a b c d e g, test:analytics
 npm run test:e2e                                          # Playwright, in a container on the compose network
 node tests/performance/smoke.mjs                          # lab-only latency smoke
+node tests/performance/load.mjs                           # lab-only stepped load test (writes load-result.json)
 
 # after changing a service: rebuild that container, then run the affected test
 docker compose --profile core up -d --build case-service
 
 # recovery lab (dr-lab profile); each writes a report under infrastructure/disaster-recovery/reports
-npm run dr:restore-drill ; npm run dr:failover-drill ; npm run dr:failback
+npm run dr:restore-drill ; npm run dr:failover-drill ; npm run dr:failback ; npm run dr:pitr-drill
 
 # generated artefacts
 npm run openapi:export                                    # docs/api/*.openapi.json from the running services

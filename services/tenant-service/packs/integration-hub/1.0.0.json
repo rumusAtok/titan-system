@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "id": "integration-hub",
+  "version": "1.0.0",
+  "name": "Integration hub",
+  "industry": "All industries",
+  "description": "Signed inbound webhooks through which external systems report incidents, and outbound subscriptions that forward selected platform events (signed, with retries and a delivery log) to destinations on the operator's allow-list.",
+  "requires": { "capabilities": ["integrations"], "packs": [{ "id": "platform-core" }] },
+  "roles": [
+    { "role": "tenant_admin", "name": "Tenant administrator", "description": "Creates endpoints and subscriptions and rotates their secrets", "permissions": ["integrations.manage"] },
+    { "role": "auditor", "name": "Auditor", "description": "Reads endpoint messages and delivery logs", "permissions": ["integrations.read"] }
+  ],
+  "navigation": [
+    { "key": "integrations", "label": "Integrations", "href": "/integrations/", "icon": "plug", "roles": ["tenant_admin", "auditor"], "order": 880 }
+  ],
+  "lifecycle": {
+    "upgrades_from": [],
+    "changes": ["Initial version"],
+    "on_deactivate": "The integrations capability is withdrawn: inbound endpoints answer 'not found', pending deliveries fail without being sent, and endpoint, subscription and delivery records are kept."
+  }
+}

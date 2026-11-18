@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "id": "operational-reporting",
+  "version": "1.0.0",
+  "name": "Operational reporting",
+  "industry": "All industries",
+  "description": "Report definitions built from the registered analytics datasets, generated on request with the reader's own access as CSV and printable HTML, with daily, weekly or monthly due-date reminders.",
+  "requires": { "capabilities": ["reporting"], "packs": [{ "id": "platform-core" }] },
+  "roles": [
+    { "role": "analyst", "name": "Analyst", "description": "Defines and generates reports", "permissions": ["reports.define", "reports.generate"] }
+  ],
+  "navigation": [
+    { "key": "reports", "label": "Reports", "href": "/reports/", "icon": "bar-chart", "audience": "staff", "order": 700 }
+  ],
+  "lifecycle": {
+    "upgrades_from": [],
+    "changes": ["Initial version"],
+    "on_deactivate": "The reporting capability is withdrawn: definitions and generated reports are kept but cannot be read or generated until it is active again."
+  }
+}

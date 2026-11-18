@@ -136,7 +136,10 @@ describe('Workflow subject registry: database protections (workflow-service role
 
   it('existing cases and incidents are untouched by the wider registry', async () => {
     const types = await asTenant(db, TENANT_A, async () => (await db.query('SELECT subject_type, count(*)::int AS n FROM workflow_instances GROUP BY 1 ORDER BY 1')).rows);
-    assert.deepEqual(types.map((t) => t.subject_type), ['case', 'incident']);
+    const kinds = types.map((t) => t.subject_type);
+    assert.ok(kinds.includes('case') && kinds.includes('incident'), 'cases and incidents keep their processes');
+    // Besides them only the subject types of the modules added after v3 (documents, procurement) have processes here.
+    assert.deepEqual(kinds.filter((k) => !['case', 'incident'].includes(k)).every((k) => ['document', 'purchase_request'].includes(k)), true);
     assert.ok(types.every((t) => t.n > 0));
   });
 });

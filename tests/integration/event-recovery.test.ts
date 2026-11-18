@@ -14,7 +14,7 @@ import {
   sleep,
   startService,
   stopService,
-  streamMessageCount,
+  streamMessageCount, subjectMessageCount,
   unique,
   waitFor,
 } from '../helpers/stack.ts';
@@ -84,10 +84,12 @@ describe('Test D: a consumer is interrupted while events are published', () => {
   });
 
   it('the broker drops a repeated publish of the same message id (outbox relay retry)', async () => {
-    const before = await streamMessageCount('TITAN_EVENTS');
+    // A subject used only by this test, so other traffic on the shared stream cannot affect the count.
+    const type = `test.duplicate.${unique().toLowerCase()}.v1`;
+    const subject = `titan.events.${type}`;
     const event = {
       event_id: crypto.randomUUID(),
-      event_type: 'test.duplicate.published.v1',
+      event_type: type,
       schema_version: 1,
       producer: 'integration-test',
       aggregate_type: 'test',
@@ -100,7 +102,7 @@ describe('Test D: a consumer is interrupted while events are published', () => {
       payload: {},
     };
     for (let i = 0; i < 5; i++) await publishRawEvent(event.event_type, JSON.stringify(event), event.event_id);
-    assert.equal((await streamMessageCount('TITAN_EVENTS')) - before, 1);
+    assert.equal(await subjectMessageCount('TITAN_EVENTS', subject), 1, 'five publishes with one message id are stored once');
   });
 });
 

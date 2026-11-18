@@ -19,6 +19,11 @@ export const Roles = {
   FacilityManager: 'facility_manager',
   /** Member of the organisation who may raise service requests and follow their own. Not staff. */
   ServiceRequester: 'service_requester',
+  // Roles of the modules added after v3: documents, procurement, video.
+  RecordsManager: 'records_manager',
+  ProcurementOfficer: 'procurement_officer',
+  Storekeeper: 'storekeeper',
+  SecurityOperator: 'security_operator',
   DrOperator: 'dr_operator',
   PlatformAdmin: 'platform_admin',
   /** Machine identity (client-credentials service accounts). */
@@ -49,6 +54,10 @@ export const STAFF_ROLES: readonly string[] = [
   Roles.MaintenancePlanner,
   Roles.MaintenanceTechnician,
   Roles.FacilityManager,
+  Roles.RecordsManager,
+  Roles.ProcurementOfficer,
+  Roles.Storekeeper,
+  Roles.SecurityOperator,
 ];
 
 /** Roles that take charge of an incident (acknowledge, assign, annotate). */

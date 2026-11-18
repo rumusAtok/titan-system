@@ -4,9 +4,10 @@ A multi-tenant, multi-industry operations platform built as independently deploy
 microservices. A universal core (identity, tenancy, workflow, incidents, assets, notifications,
 audit, analytics, optional AI, recovery) is extended per organisation by **industry packs**:
 declarative, versioned configuration that switches on business capabilities (case management,
-device telemetry, maintenance) and installs workflows, forms, asset categories, sensor profiles,
+device telemetry, maintenance, procurement, reporting, integrations, video) and installs workflows, forms, asset categories, sensor profiles,
 alarm rules and dashboards. Packs shipped: public services, disaster and infrastructure
-management (flood monitoring), manufacturing, facilities management.
+management (flood monitoring), manufacturing, facilities management, and four cross-industry
+module packs: procurement and stores, operational reporting, integration hub, video monitoring.
 
 > **Status: development release, verified on one workstation with synthetic data.**
 > It is not production-ready, not certified, not highly available and has never been deployed
@@ -22,17 +23,23 @@ management (flood monitoring), manufacturing, facilities management.
 | Industry packs (v3) | Activate, configure, upgrade (1.0 → 1.1 with a process in flight) and deactivate packs per tenant; one tenant can run several; modules a tenant has not activated are refused by the API, not only hidden; configuration can be exported and restored |
 | Manufacturing (v3) | Machine vibration and bearing-temperature telemetry → alarm → equipment incident → automatic repair request → approval → work order → completion → machine condition, incident timeline and KPIs |
 | Facilities (v3) | Building service requests and inspection findings → configurable approval (budget stage from 5000) → assigned work → completion; no device needed |
-| Command center | Web application whose menu and dashboards come from the tenant's packs: enterprise workspace with industry selector, shared work inbox, assets, incidents, maintenance, production equipment, facilities, and the v2 government, IoT, map, AI, administration and recovery screens |
+| Documents and zones (core) | Controlled documents with upload check, review by a records manager through the workflow engine, classification, retention, legal hold and disposal; zones on a map, with incidents located in them through their asset or device |
+| Procurement and stores | Suppliers, items, stock per store, purchase requests with approval (budget stage from 5000), purchase orders (internal records), goods receipts, stock issues and counts, automatic replenishment requests |
+| Maintenance planning | Preventive plans that open work orders before they are due, inspection rounds with checklists (failures raise requests), parts booked out of stores, labour cost |
+| Sourcing and budgets | Requests for quotation, quotation comparison and award, budgets per cost centre with an extra approval when exceeded |
+| Digital twin | The asset hierarchy as a live schematic, with readings, alarms, incidents, work, documents, cameras and zones per asset |
+| Reports, integrations, cameras | Reports from the registered datasets generated with the reader's own access (CSV, printable HTML); signed inbound webhooks that open incidents and signed outbound events to allow-listed hosts only (by default a local test receiver); a camera register with purpose-logged viewing, recording references and incident markers (no video is stored or analysed) |
+| Command center | Web application whose menu and dashboards come from the tenant's packs: enterprise workspace with industry selector, shared work inbox, assets, incidents, documents, zones, cameras, procurement, reports, integrations, maintenance, production equipment, facilities, and the v2 government, IoT, map, AI, administration and recovery screens |
 | Analytics | Event stream → bronze/silver/gold lake → KPIs and trends computed from stored data |
 | AI assistant (optional) | Answers questions from platform data using read-only tools with the user's own permissions; works without a model (answers are then labelled as deterministic); writes only as proposals a person approves |
 | Multi-tenancy | Tenant from the verified token plus PostgreSQL row-level security; two demo tenants that cannot see each other |
 | Resilience | Transactional outbox, idempotent consumers, retries, dead-letter queue, circuit breakers, bulkheads, rate limiting |
 | Recovery lab | Scripted backup, restore drill, failover drill with operator confirmation, and failback, each producing a report with measured times |
 
-14 services are implemented (11 Node.js, 3 Python) plus the gateway and web application.
-maintenance-service is a minimum slice (requests, approval outcome, work orders).
-6 further services of the target catalog are designed but have no code:
-document, procurement, geospatial, video, integration, report.
+20 services are implemented (17 Node.js, 3 Python) plus the gateway and web application.
+maintenance, document, geospatial, procurement, report, integration and video services are
+minimum slices: what each does not do is listed in the [service map](docs/architecture/service-map.md)
+and [ADR-0015](docs/adr/README.md).
 
 ## Quick start
 
@@ -65,6 +72,8 @@ A guided five-minute tour is in the [developer setup guide](docs/deployment/deve
 | http://localhost:3000 | Web command center |
 | http://localhost:8080 | API gateway |
 | http://localhost:8081 | Keycloak |
+| http://localhost:8025 | Mailpit: every e-mail the platform sends (nothing leaves the machine) |
+| http://localhost:8888 | Local video test server (synthetic streams for the camera page) |
 | http://localhost:3001, http://localhost:9090 | Grafana, Prometheus (`observability` profile) |
 
 All ports are bound to 127.0.0.1.

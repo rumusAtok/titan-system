@@ -2,7 +2,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Activity, Bell, Bot, Boxes, Building, Building2, ClipboardCheck, Factory, FileText, Gauge, Inbox, LayoutDashboard, LifeBuoy, LogOut, Map as MapIcon, Menu, Settings, Siren, Wrench, X,
+  Activity, Bell, Bot, Boxes, Building, Building2, ChartColumn, ClipboardCheck, Factory, FileText, Gauge, Inbox, LayoutDashboard, LifeBuoy, LogOut, Map as MapIcon, MapPin, Menu, Network, Plug, Settings, ShoppingCart, Siren, Video, Wrench, X,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -39,6 +39,12 @@ export const ICONS: Record<string, typeof LayoutDashboard> = {
   factory: Factory,
   wrench: Wrench,
   building: Building,
+  'map-pin': MapPin,
+  'shopping-cart': ShoppingCart,
+  'bar-chart': ChartColumn,
+  plug: Plug,
+  video: Video,
+  network: Network,
 };
 
 /**

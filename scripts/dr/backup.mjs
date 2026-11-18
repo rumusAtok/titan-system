@@ -22,6 +22,13 @@ export const KEY_TABLES = {
   titan_case: ['cases', 'case_status_history'],
   titan_workflow: ['workflow_definitions', 'workflow_instances', 'workflow_tasks', 'workflow_decisions'],
   titan_maintenance: ['request_types', 'maintenance_requests', 'work_orders', 'tenant_entitlements'],
+  // Modules added after v3.
+  titan_document: ['documents', 'document_versions', 'document_links'],
+  titan_geo: ['zones', 'located_features', 'incident_locations'],
+  titan_procurement: ['suppliers', 'items', 'stock_levels', 'stock_movements', 'purchase_requests', 'purchase_orders', 'tenant_entitlements'],
+  titan_report: ['report_definitions', 'report_runs'],
+  titan_integration: ['inbound_endpoints', 'inbound_messages', 'subscriptions', 'deliveries'],
+  titan_video: ['cameras', 'view_sessions', 'recordings', 'markers'],
   titan_audit: ['audit_events'],
   titan_asset: ['assets'],
   titan_incident: ['incidents'],

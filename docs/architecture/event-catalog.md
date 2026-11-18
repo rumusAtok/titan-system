@@ -133,6 +133,40 @@ Verified by Test D and the failover drill (see the verification report).
 The new fields of existing events are optional, so events written before v3 still validate
 (this was found by the event contract test when `pack_id` was first added as required).
 
+### Documents, zones, procurement, reports, integrations, video (after v3)
+| Type | Emitted when | Key payload fields |
+| --- | --- | --- |
+| `document.created.v1` | A controlled document is created | `document_id`, `reference_no`, `document_type`, `classification`, `retention_class`, `links` |
+| `document.version.added.v1` | A version is uploaded (and passed the scan) | `version_id`, `version`, `filename`, `size_bytes`, `sha256` |
+| `document.version.published.v1` | A version is published, or its review rejected (`approved: false`) | `document_id`, `version_id`, `version`, `approved` |
+| `document.legal_hold.changed.v1` / `document.disposed.v1` | Hold placed or released / content disposed of | `legal_hold`, `reason` / `versions_removed` |
+| `geo.zone.created.v1` | A zone is drawn | `zone_id`, `code`, `zone_type`, `notify_role` |
+| `geo.incident.in_zone.v1` | An incident is located (via its asset or device) inside a zone that watches incidents | `incident_id`, `zone_id`, `zone_code`, `latitude`, `longitude` |
+| `procurement.purchase_request.submitted.v1` / `decided.v1` | A request is raised (person, low stock or work order) / its approval ends | `purchase_request_id`, `total_amount`, `currency`, `origin_type` / `outcome` |
+| `procurement.purchase_order.issued.v1` | An approved request becomes a purchase order (internal record) | `purchase_order_id`, `supplier_id`, `total_amount` |
+| `procurement.goods.received.v1` | A goods receipt is recorded | `lines[{item_id, sku, quantity}]`, `fully_received` |
+| `procurement.stock.issued.v1` / `procurement.stock.low.v1` | Stock leaves a store / stock is at or below its reorder level | `sku`, `location`, `quantity` / `on_hand`, `reorder_level` |
+| `report.generated.v1` | A report run completes | `report_run_id`, `definition_id`, `datasets`, `rows` |
+| `integration.incident.reported.v1` | A **verified** inbound webhook reports an incident; incident-service creates it (source `external`, deduplicated by endpoint + external id) | `endpoint_id`, `external_id`, `title`, `severity`, `category` |
+| `integration.delivery.failed.v1` | An outbound delivery gives up | `subscription_id`, `event_id`, `attempts`, `error` |
+| `video.camera.registered.v1` / `status_changed.v1` | Camera registered / status changed | `camera_id`, `code`, coordinates / `from`, `to` |
+| `video.session.started.v1` | Someone opened a camera's stream (audited) | `session_id`, `camera_id`, `viewer_id`, `purpose`, `incident_id` |
+| `video.marker.created.v1` | A moment is marked, optionally for an incident (recorded on its timeline) | `marker_id`, `camera_id`, `recording_id`, `incident_id`, `at`, `label` |
+
+Added in the second round (2026-11-18):
+
+| Type | Emitted when | Key payload fields |
+| --- | --- | --- |
+| `maintenance.inspection.completed.v1` | An inspection round is recorded; each failed item has raised a finding request | `round_id`, `plan_code`, `asset_id`, `findings` |
+| `maintenance.work_order.completed.v1` (new optional fields) | Parts used and labour cost | `parts[{sku, quantity, location}]`, `labor_cost`, `currency` |
+| `procurement.stock.issued.v1` (new optional fields) | Cost of what was issued | `unit_cost`, `currency` |
+| `procurement.stock.issue_failed.v1` | Parts named on a completed work order could not be booked out | `sku`, `quantity`, `location`, `reference_id`, `reason` |
+| `procurement.rfq.awarded.v1` | A quotation was awarded and became a purchase request | `rfq_id`, `quotation_id`, `supplier_id`, `purchase_request_id`, `total_amount`, `lowest` |
+
+The workflow subject type `document` was added (registry and migration 0003 of workflow-service);
+`purchase_request` is now owned by procurement-service. Documents and purchase requests start
+their processes with `workflow.start.requested.v1` and act on `workflow.instance.completed.v1`.
+
 ### Notifications, security, platform
 | Type | Emitted when | Key payload fields |
 | --- | --- | --- |

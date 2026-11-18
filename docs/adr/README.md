@@ -255,3 +255,68 @@ tenant's industries stay separable in lists, datasets and dashboards.
 implemented. Effects on other services are by event only: asset-service sets an asset under
 maintenance and back, and records the condition; incident-service writes the work to the incident
 timeline but never resolves an incident on its own.
+
+## ADR-0015: Six further modules as minimum slices, with conservative external boundaries
+
+**Context.** After v3 the service map still listed document, geospatial, procurement, report,
+integration and video services as not started. Each has an obvious "full" version (document
+management system, GIS server, ERP, BI server, integration platform, VMS) that is far beyond a
+locally verifiable release, and three of them touch the outside world.
+
+**Decision.**
+- *Documents* and *geospatial* are universal core (no capability). Document review is an ordinary
+  workflow (`document-review`, records manager) started with `workflow.start.requested.v1`;
+  uploads are limited to 5 MB and five content types, checked by signature and for the EICAR test
+  string. That is a scan *hook*, not an antivirus engine. Zones are GeoJSON evaluated in
+  application code; PostGIS was not added.
+- *Procurement*, *reporting*, *integrations* and *video* are switchable capabilities with their own
+  packs. Purchase orders are internal records: nothing is sent to suppliers.
+- *report-service* holds no analytics credentials: it reads datasets **with the caller's token**,
+  so a report can never show more than the analytics API would. Schedules therefore produce
+  reminders, not unattended runs.
+- *integration-service*: inbound webhooks are public at the gateway (`/hooks/<id>`) but
+  authenticated by HMAC-SHA256 over timestamp and raw body, a 5-minute window and one acceptance
+  per event id. Outbound deliveries go only to hosts on an operator allow-list (default: the local
+  `webhook-sink` container), are signed, retried with backoff and logged. Secrets are sealed with
+  AES-256-GCM using a key from the environment.
+- *video-service* stores metadata only. A stream URL is revealed only inside a viewing session
+  that states a purpose and is logged and audited.
+
+**Consequences.** No real e-mail, supplier, VMS or third-party system is contacted; real
+destinations need an operator decision (allow-list and, in Kubernetes, an egress NetworkPolicy).
+No virus scanning, OCR, spatial indexing, report scheduling without a person, or video analytics.
+These are recorded as limits in the roadmap and risk register.
+
+## ADR-0016: Second-round features run against local stand-ins for outside systems
+
+**Context.** The remaining gaps (e-mail, live video, virus scanning, alert routing) each normally
+connect to an outside system: a mail relay, a video management system, an antivirus vendor, an
+on-call service. The release must stay verifiable on one workstation, and nothing may be sent
+outside without authorisation.
+
+**Decision.**
+- Every outside system gets a local stand-in that speaks the real protocol, and an adapter that
+  refuses anything else:
+  - E-mail: SMTP to Mailpit. The `mailpit` adapter only accepts hosts on a fixed local list;
+    real SMTP stays `unsupported`.
+  - Video: HLS from MediaMTX, which publishes a synthetic ffmpeg test pattern.
+  - Alerts: Alertmanager webhooks to `webhook-sink`.
+  - Virus scanning: the ClamAV daemon, in the optional `scan` profile. It downloads public
+    signatures; no content leaves the stack. A configured scanner that is unreachable refuses
+    uploads (fail closed).
+- Preventive plans open their work order without an approval workflow: the plan, created by a
+  planner, is the authorisation. Inspection findings and purchases still go through their
+  workflows. A request that would exceed its cost-centre budget gets an extra stage.
+- Parts used on a work order are booked out of stores by procurement-service from the completion
+  event. A failure is reported back by event and never invented.
+- Report PDF and XLSX files are written by small in-house encoders (a zip of XML parts, and a
+  plain-text PDF), not third-party libraries. Values are never written as formulas.
+- One durable event consumer per service name, enforced by the platform: a second registration
+  under the same name now fails at start-up. Two registrations had been splitting the procurement
+  event stream between them (found by the planning tests).
+
+**Consequences.** Replacing a stand-in with a real system is a configuration change plus an
+explicit decision: a relay host for the mail adapter, VMS-issued stream URLs, receivers in
+Alertmanager and `CLAMAV_HOST`.
+
+The plain-text PDF has no fonts beyond Latin-1. Characters outside it print as `?`.

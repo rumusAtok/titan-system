@@ -4,10 +4,82 @@ Single source of truth for what exists, what was verified, and what is still ope
 "Verified" means the command was actually run in this repository and passed; the evidence is in
 `docs/testing/verification-report.md`.
 
-_Last updated: 2026-11-17 (v3 multi-industry platform on branch `feature/v3-industry-packs`)_
+_Last updated: 2026-11-18 (six further modules on branch `feature/v3-industry-packs`)_
 
 **Status: locally verified development release. Not production-ready, not deployed to any
 cluster, not highly available, all data synthetic.**
+
+## Second round (2026-11-18): the remaining buildable features
+
+Same branch, **not committed**. Details and evidence: `docs/testing/verification-report.md`
+(second-round section), ADR-0016.
+
+| Feature | State |
+| --- | --- |
+| Maintenance: preventive plans, inspection plans and rounds (findings raise requests), parts used, labour cost, settings | Done, verified |
+| Procurement: requests for quotation, quotations and award, cost centres and budgets (over-budget approval stage, pack 1.1.0), parts booked out for work orders | Done, verified |
+| E-mail over SMTP to a local catcher (Mailpit, http://localhost:8025) | Done, verified (Test A) |
+| Reports as PDF and Excel | Done, verified |
+| Live camera view: HLS player plus a local synthetic test stream (video-lab) | Done; the playlist fetch is verified, frame decoding is not (see the report) |
+| Digital twin page (platform-core 1.2.0) | Done, browser-tested |
+| Geospatial backfill; zones on the GIS map | Done, verified |
+| Document full-text search; optional ClamAV scanning (profile `scan`, fails closed) | Search verified; ClamAV unit-tested against a fake daemon only |
+| Alertmanager routing (to the local receiver) | Done, verified with a synthetic alert |
+| Point-in-time recovery drill | Passed |
+| Stepped load test | Run (lab numbers only) |
+| Platform guard: one durable consumer per name | Done (found a real event-loss defect) |
+
+| Results | |
+| --- | --- |
+| Unit | 197 passed (21 files); Python pipeline 18 passed |
+| Integration (full) | 343 / 346; the 3 failures were fixed and their files re-run, passing |
+| Browser | 33 / 33 |
+| PITR drill | passed: 6.1 GB base backup in 56 s, recovered to the target in 7.2 s |
+| Helm | lint 0 failures, 115 resources valid |
+
+Still not done, with reasons: see "Not done in this round" in the verification report.
+
+## Six further modules (2026-11-17 / 18)
+
+document, geospatial, procurement, report, integration and video services, as minimum slices
+(ADR-0015). Same branch, **not committed**.
+
+| Milestone | State |
+| --- | --- |
+| Contracts: capabilities `procurement`, `reporting`, `integrations`, `video`; roles records_manager, procurement_officer, storekeeper, security_operator; subject type `document`; 19 events | Done |
+| document-service: versions, upload check (signatures, EICAR), review workflow, classification, retention, legal hold, disposal, links | Done, verified |
+| geospatial-service: zones, point / radius queries, layers, incidents located in watched zones | Done, verified |
+| procurement-service: suppliers, items, stock, purchase requests with approval, orders, receipts, issues, counts, replenishment | Done, verified |
+| report-service: definitions over datasets, generation with the caller's token, CSV / HTML, reminders | Done, verified |
+| integration-service: signed inbound webhooks to incidents; signed outbound deliveries to allow-listed hosts; local `webhook-sink` | Done, verified |
+| video-service: cameras, purpose-logged viewing, recording references, markers on incidents | Done, verified |
+| incident-service consumes external reports, zone locations and video markers | Done, verified |
+| Gateway: routes, public `/hooks/<id>` relay (rate and size limited), download headers, 8 MB body limit | Done, unit-tested |
+| Packs: platform-core 1.1.0 (documents, zones, document-review), procurement-inventory, operational-reporting, integration-hub, video-monitoring | Done, contract-tested |
+| Web: Documents, Zones and map, Procurement and stores, Reports, Integrations, Cameras | Done, browser-tested |
+| Seed: synthetic suppliers, items, stock, documents, zones, reports, endpoints, subscriptions, cameras (Riverbend, Meridian); 9 demo users | Done; idempotent (second run created 0 records) |
+| Compose, DB provisioning, Helm, DR key tables, audit subjects, OpenAPI (20 services) | Done |
+
+### Results of this stage (2026-11-18)
+
+| What | Result |
+| --- | --- |
+| `npm run build` | pass |
+| Node unit tests (container) | 179 passed (19 files) |
+| New integration tests (procurement 12, documents and zones 11, integrations / reports / video 16) | 39 passed, run individually against the stack |
+| Database isolation of the six new databases (`tests/security/modules-isolation.test.ts`) | 15 passed |
+| Full `npm run test:integration` | 322 tests: 300 passed, 7 failed, 15 cancelled. One failure was a test of mine (fixed, re-run 16/16). **All other failures come from the Meridian tenant's packs having been changed outside the seed** on 2026-11-17 08:54 (manufacturing deactivated, public-services activated, by `maya.admin`); the manufacturing and AI-industry tests need the manufacturing pack. Not re-run after that change is resolved |
+| Browser tests | 31: 28 passed, 3 failed (2 = Meridian state; 1 = navigation expectation, fixed and re-run); new `modules.spec.ts` 5 of 5 |
+| Helm lint / kubeconform | 0 failures / 115 resources valid |
+| Restore drill (21 databases) | passed: 335 MB in 152 s, restored and verified in 172 s (report backup-restore-20261118T022015Z) |
+
+### Open items of this stage
+
+1. Decide about Meridian's packs (restore manufacturing and remove public-services, or keep the
+   change and adapt the tests), then re-run the full integration and browser suites.
+2. Failover and failback drills not re-run; Python unit tests not re-run (Python code unchanged);
+   CI not run.
+3. Limits by design: ADR-0015, risks S15 to S18, P13, P14.
 
 ## TITAN v3: multi-industry evolution (2026-11-16 / 17)
 
@@ -63,7 +135,7 @@ user). **Not committed yet.** Design: `docs/architecture/industry-packs.md`, ADR
 2. Run the failover and failback drills with maintenance-service in the stack (not re-run in v3).
 3. Event-fed entitlements for the Python services (risk S13); per-service installation status.
 4. Role provisioning from packs and site-scoped permissions (risk P11).
-5. Remaining services: document, report, procurement/inventory, inspection planning.
+5. ~~Remaining services~~: done as minimum slices (2026-11-18, above); inspection planning remains.
 
 ## Environment
 
@@ -92,12 +164,11 @@ user). **Not committed yet.** Design: `docs/architecture/industry-packs.md`, ADR
 
 ## Services
 
-Implemented (13): tenant, case, workflow, notification, audit, asset, device, telemetry, alert,
-incident (NestJS); data-pipeline, analytics, ai-gateway (FastAPI). Plus `apps/gateway` and
-`apps/web`.
-
-Not started (7): document, maintenance, procurement, geospatial, video, integration, report.
-They are described in `docs/architecture/service-map.md` and ordered in `docs/roadmap.md`.
+Implemented (20): tenant, case, workflow, notification, audit, asset, device, telemetry, alert,
+incident, maintenance, document, geospatial, procurement, report, integration, video (NestJS);
+data-pipeline, analytics, ai-gateway (FastAPI). Plus `apps/gateway`, `apps/web` and the local
+`webhook-sink` test receiver. maintenance and the six services added after v3 are minimum
+slices (`docs/architecture/service-map.md`, ADR-0014, ADR-0015).
 
 ## Verified results (final pass, 2026-11-13, from empty volumes)
 

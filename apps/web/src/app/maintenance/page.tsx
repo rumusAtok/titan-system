@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
 import { RaiseRequestDialog, RequestsTable, WorkOrdersTable } from '@/components/maintenance';
 import { Button, PageHeader } from '@/components/ui';
@@ -17,7 +18,7 @@ export default function MaintenancePage() {
       <PageHeader
         title="Maintenance"
         description="Requests go through the approval process their type names; an approved request becomes a work order."
-        actions={<Button variant="primary" onClick={() => setRaising(true)}>Raise request</Button>}
+        actions={<span className="flex gap-2"><Link className="rounded-md border border-line bg-white px-3 py-1.5 text-sm shadow-sm hover:bg-slate-50" href="/maintenance/planning/">Planning and inspections</Link><Button variant="primary" onClick={() => setRaising(true)}>Raise request</Button></span>}
       />
       <div className="space-y-6">
         {hasRole('maintenance_technician') && <WorkOrdersTable mine pack={pack} title="My work orders" />}

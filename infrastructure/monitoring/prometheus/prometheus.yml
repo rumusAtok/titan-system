@@ -6,6 +6,12 @@ global:
 rule_files:
   - /etc/prometheus/alerts.yml
 
+# Firing alerts go to Alertmanager, which routes them (locally) to people and receivers.
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: [alertmanager:9093]
+
 scrape_configs:
   - job_name: titan-node-services
     metrics_path: /metrics
@@ -22,6 +28,13 @@ scrape_configs:
           - device-service:3000
           - telemetry-service:3000
           - alert-service:3000
+          - maintenance-service:3000
+          - document-service:3000
+          - geospatial-service:3000
+          - procurement-service:3000
+          - report-service:3000
+          - integration-service:3000
+          - video-service:3000
     relabel_configs: &service-label
       - source_labels: [__address__]
         regex: "([^:]+):.*"

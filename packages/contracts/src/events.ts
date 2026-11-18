@@ -405,8 +405,150 @@ export const EventCatalog = {
     created_at: ts,
     started_at: nullableTs,
     completed_at: ts,
+    /** Parts used, to be booked out of stores by procurement-service (optional: added after the first release). */
+    parts: z.array(z.object({ sku: z.string(), quantity: z.number().positive(), location: z.string() })).optional(),
+    /** Labour cost at the tenant's rate (optional: added after the first release). */
+    labor_cost: z.number().nullable().optional(),
+    currency: z.string().optional(),
+  }),
+  /** An inspection round was completed; each failed item raised a finding request. */
+  'maintenance.inspection.completed.v1': z.object({
+    round_id: uuid,
+    reference_no: z.string(),
+    plan_id: uuid,
+    plan_code: z.string(),
+    asset_id: uuid.nullable(),
+    findings: z.number().int().nonnegative(),
+    completed_by: z.string(),
+    completed_at: ts,
   }),
   'maintenance.work_order.cancelled.v1': z.object({ work_order_id: uuid, reference_no: z.string(), asset_id: uuid.nullable(), cancelled_by: z.string(), reason: z.string() }),
+
+  // --- document-service ---
+  'document.created.v1': z.object({
+    document_id: uuid,
+    reference_no: z.string(),
+    title: z.string(),
+    document_type: z.string(),
+    classification: z.enum(['public', 'internal', 'restricted']),
+    retention_class: z.string(),
+    links: z.array(z.object({ subject_type: z.string(), subject_id: z.string() })),
+    created_by: z.string(),
+  }),
+  'document.version.added.v1': z.object({
+    document_id: uuid,
+    version_id: uuid,
+    version: z.number().int().positive(),
+    filename: z.string(),
+    content_type: z.string(),
+    size_bytes: z.number().int().nonnegative(),
+    sha256: z.string(),
+    uploaded_by: z.string(),
+  }),
+  'document.version.published.v1': z.object({ document_id: uuid, version_id: uuid, version: z.number().int().positive(), approved: z.boolean() }),
+  'document.legal_hold.changed.v1': z.object({ document_id: uuid, legal_hold: z.boolean(), changed_by: z.string(), reason: z.string() }),
+  'document.disposed.v1': z.object({ document_id: uuid, reference_no: z.string(), retention_class: z.string(), disposed_by: z.string(), versions_removed: z.number().int().nonnegative() }),
+
+  // --- geospatial-service ---
+  'geo.zone.created.v1': z.object({ zone_id: uuid, code: z.string(), name: z.string(), zone_type: z.string(), notify_role: z.string().nullable() }),
+  /** An incident located (through its asset or device) inside a zone that watches incidents. */
+  'geo.incident.in_zone.v1': z.object({
+    incident_id: uuid,
+    reference_no: z.string(),
+    zone_id: uuid,
+    zone_code: z.string(),
+    zone_name: z.string(),
+    latitude: z.number(),
+    longitude: z.number(),
+  }),
+
+  // --- procurement-service ---
+  'procurement.purchase_request.submitted.v1': z.object({
+    purchase_request_id: uuid,
+    reference_no: z.string(),
+    total_amount: z.number(),
+    currency: z.string(),
+    lines: z.number().int().positive(),
+    requested_by: z.string(),
+    origin_type: z.string(),
+    origin_id: z.string().nullable(),
+  }),
+  'procurement.purchase_request.decided.v1': z.object({ purchase_request_id: uuid, reference_no: z.string(), outcome: z.enum(['approved', 'rejected', 'cancelled']), decided_at: ts }),
+  'procurement.purchase_order.issued.v1': z.object({
+    purchase_order_id: uuid,
+    reference_no: z.string(),
+    purchase_request_id: uuid,
+    supplier_id: uuid,
+    total_amount: z.number(),
+    currency: z.string(),
+    issued_at: ts,
+  }),
+  'procurement.goods.received.v1': z.object({
+    purchase_order_id: uuid,
+    reference_no: z.string(),
+    receipt_id: uuid,
+    lines: z.array(z.object({ item_id: uuid, sku: z.string(), quantity: z.number() })),
+    fully_received: z.boolean(),
+    received_by: z.string(),
+    received_at: ts,
+  }),
+  'procurement.stock.issued.v1': z.object({
+    item_id: uuid,
+    sku: z.string(),
+    quantity: z.number(),
+    location: z.string(),
+    reference_type: z.string().nullable(),
+    reference_id: z.string().nullable(),
+    issued_by: z.string(),
+    /** Unit cost at the time of issue (optional: added after the first release). */
+    unit_cost: z.number().optional(),
+    currency: z.string().optional(),
+  }),
+  /** A request for quotation was awarded; the chosen quotation became a purchase request. */
+  'procurement.rfq.awarded.v1': z.object({
+    rfq_id: uuid,
+    reference_no: z.string(),
+    quotation_id: uuid,
+    supplier_id: uuid,
+    purchase_request_id: uuid,
+    total_amount: z.number(),
+    lowest: z.boolean(),
+    awarded_by: z.string(),
+  }),
+  /** Parts named on a completed work order could not be booked out (not enough stock, or unknown item). */
+  'procurement.stock.issue_failed.v1': z.object({ sku: z.string(), quantity: z.number(), location: z.string(), reference_type: z.string(), reference_id: z.string(), reason: z.string() }),
+  'procurement.stock.low.v1': z.object({ item_id: uuid, sku: z.string(), name: z.string(), location: z.string(), on_hand: z.number(), reorder_level: z.number() }),
+
+  // --- report-service ---
+  'report.generated.v1': z.object({
+    report_run_id: uuid,
+    definition_id: uuid,
+    definition_name: z.string(),
+    datasets: z.array(z.string()),
+    rows: z.number().int().nonnegative(),
+    generated_by: z.string(),
+    generated_at: ts,
+  }),
+
+  // --- integration-service ---
+  /** A verified inbound webhook reported an incident from an external system. incident-service creates it (source `external`). */
+  'integration.incident.reported.v1': z.object({
+    endpoint_id: uuid,
+    endpoint_name: z.string(),
+    external_id: z.string(),
+    title: z.string(),
+    description: z.string(),
+    severity: z.enum(['info', 'warning', 'critical']),
+    category: z.string().nullable(),
+  }),
+  'integration.delivery.failed.v1': z.object({ subscription_id: uuid, event_id: uuid, event_type: z.string(), attempts: z.number().int(), error: z.string() }),
+
+  // --- video-service ---
+  'video.camera.registered.v1': z.object({ camera_id: uuid, code: z.string(), name: z.string(), asset_id: uuid.nullable(), latitude: z.number().nullable(), longitude: z.number().nullable() }),
+  'video.camera.status_changed.v1': z.object({ camera_id: uuid, code: z.string(), from: z.string(), to: z.string() }),
+  /** Someone opened a camera's stream: who, which camera and why (CCTV access is audited). */
+  'video.session.started.v1': z.object({ session_id: uuid, camera_id: uuid, viewer_id: z.string(), purpose: z.string(), incident_id: uuid.nullable() }),
+  'video.marker.created.v1': z.object({ marker_id: uuid, camera_id: uuid, recording_id: uuid.nullable(), incident_id: uuid.nullable(), at: ts, label: z.string(), created_by: z.string() }),
 
   // --- notification-service ---
   'notification.requested.v1': z

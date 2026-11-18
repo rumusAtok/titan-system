@@ -1,0 +1,489 @@
+{
+  "components": {
+    "schemas": {},
+    "securitySchemes": {
+      "bearer": {
+        "bearerFormat": "JWT",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "contact": {},
+    "description": "Zones and geofences, spatial queries over located assets, devices and cameras, and incident-in-zone alerts.",
+    "title": "TITAN geospatial-service",
+    "version": "0.1.0"
+  },
+  "openapi": "3.0.0",
+  "paths": {
+    "/backfill": {
+      "post": {
+        "operationId": "GeoController_backfill",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Refresh the located features from the asset, device and video services (with the caller's access)",
+        "tags": [
+          "geospatial"
+        ]
+      }
+    },
+    "/incidents": {
+      "get": {
+        "operationId": "GeoController_incidents",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Incidents placed on the map through their asset or device, with the zones they fall in",
+        "tags": [
+          "geospatial"
+        ]
+      }
+    },
+    "/layers": {
+      "get": {
+        "operationId": "GeoController_layers",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Zones, located features and located incidents as one GeoJSON FeatureCollection",
+        "tags": [
+          "geospatial"
+        ]
+      }
+    },
+    "/locate": {
+      "get": {
+        "operationId": "GeoController_locate",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Zones containing a point",
+        "tags": [
+          "geospatial"
+        ]
+      }
+    },
+    "/nearby": {
+      "get": {
+        "operationId": "GeoController_nearby",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Located features within a radius of a point, nearest first",
+        "tags": [
+          "geospatial"
+        ]
+      }
+    },
+    "/zones": {
+      "get": {
+        "operationId": "GeoController_listZones",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "geospatial"
+        ]
+      },
+      "post": {
+        "operationId": "GeoController_createZone",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "pattern": "^[A-Z0-9][A-Z0-9_-]{1,31}$",
+                    "type": "string"
+                  },
+                  "description": {
+                    "default": "",
+                    "maxLength": 2000,
+                    "type": "string"
+                  },
+                  "geometry": {
+                    "anyOf": [
+                      {
+                        "properties": {
+                          "coordinates": {
+                            "items": {
+                              "items": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "maximum": 180,
+                                      "minimum": -180,
+                                      "type": "number"
+                                    },
+                                    {
+                                      "maximum": 90,
+                                      "minimum": -90,
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "maxItems": 2,
+                                "minItems": 2,
+                                "type": "array"
+                              },
+                              "maxItems": 2000,
+                              "minItems": 4,
+                              "type": "array"
+                            },
+                            "maxItems": 50,
+                            "minItems": 1,
+                            "type": "array"
+                          },
+                          "type": {
+                            "enum": [
+                              "Polygon"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "coordinates"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "coordinates": {
+                            "items": {
+                              "items": {
+                                "items": {
+                                  "items": {
+                                    "anyOf": [
+                                      {
+                                        "maximum": 180,
+                                        "minimum": -180,
+                                        "type": "number"
+                                      },
+                                      {
+                                        "maximum": 90,
+                                        "minimum": -90,
+                                        "type": "number"
+                                      }
+                                    ]
+                                  },
+                                  "maxItems": 2,
+                                  "minItems": 2,
+                                  "type": "array"
+                                },
+                                "maxItems": 2000,
+                                "minItems": 4,
+                                "type": "array"
+                              },
+                              "maxItems": 50,
+                              "minItems": 1,
+                              "type": "array"
+                            },
+                            "maxItems": 50,
+                            "minItems": 1,
+                            "type": "array"
+                          },
+                          "type": {
+                            "enum": [
+                              "MultiPolygon"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "coordinates"
+                        ],
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "name": {
+                    "maxLength": 200,
+                    "minLength": 2,
+                    "type": "string"
+                  },
+                  "notify_role": {
+                    "default": null,
+                    "nullable": true,
+                    "pattern": "^[a-z][a-z0-9_]{1,62}$",
+                    "type": "string"
+                  },
+                  "watch_incidents": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "zone_type": {
+                    "enum": [
+                      "flood_zone",
+                      "catchment",
+                      "site_boundary",
+                      "restricted_area",
+                      "service_area",
+                      "other"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "code",
+                  "name",
+                  "zone_type",
+                  "geometry"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a zone (GeoJSON Polygon or MultiPolygon, longitude/latitude)",
+        "tags": [
+          "geospatial"
+        ]
+      }
+    },
+    "/zones/{id}": {
+      "patch": {
+        "operationId": "GeoController_updateZone",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "description": {
+                    "maxLength": 2000,
+                    "type": "string"
+                  },
+                  "expected_version": {
+                    "exclusiveMinimum": true,
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "geometry": {
+                    "anyOf": [
+                      {
+                        "properties": {
+                          "coordinates": {
+                            "items": {
+                              "items": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "maximum": 180,
+                                      "minimum": -180,
+                                      "type": "number"
+                                    },
+                                    {
+                                      "maximum": 90,
+                                      "minimum": -90,
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "maxItems": 2,
+                                "minItems": 2,
+                                "type": "array"
+                              },
+                              "maxItems": 2000,
+                              "minItems": 4,
+                              "type": "array"
+                            },
+                            "maxItems": 50,
+                            "minItems": 1,
+                            "type": "array"
+                          },
+                          "type": {
+                            "enum": [
+                              "Polygon"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "coordinates"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "coordinates": {
+                            "items": {
+                              "items": {
+                                "items": {
+                                  "items": {
+                                    "anyOf": [
+                                      {
+                                        "maximum": 180,
+                                        "minimum": -180,
+                                        "type": "number"
+                                      },
+                                      {
+                                        "maximum": 90,
+                                        "minimum": -90,
+                                        "type": "number"
+                                      }
+                                    ]
+                                  },
+                                  "maxItems": 2,
+                                  "minItems": 2,
+                                  "type": "array"
+                                },
+                                "maxItems": 2000,
+                                "minItems": 4,
+                                "type": "array"
+                              },
+                              "maxItems": 50,
+                              "minItems": 1,
+                              "type": "array"
+                            },
+                            "maxItems": 50,
+                            "minItems": 1,
+                            "type": "array"
+                          },
+                          "type": {
+                            "enum": [
+                              "MultiPolygon"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "coordinates"
+                        ],
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "name": {
+                    "maxLength": 200,
+                    "minLength": 2,
+                    "type": "string"
+                  },
+                  "notify_role": {
+                    "nullable": true,
+                    "pattern": "^[a-z][a-z0-9_]{1,62}$",
+                    "type": "string"
+                  },
+                  "watch_incidents": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "expected_version"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "geospatial"
+        ]
+      }
+    },
+    "/zones/{id}/features": {
+      "get": {
+        "operationId": "GeoController_zoneFeatures",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Assets, devices, cameras and incidents inside a zone",
+        "tags": [
+          "geospatial"
+        ]
+      }
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    }
+  ],
+  "servers": [],
+  "tags": []
+}

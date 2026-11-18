@@ -190,7 +190,8 @@
                       "inspection",
                       "purchase_request",
                       "quality_deviation",
-                      "contract"
+                      "contract",
+                      "document"
                     ],
                     "type": "string"
                   }

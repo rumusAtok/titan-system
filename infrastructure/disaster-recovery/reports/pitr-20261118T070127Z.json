@@ -1,0 +1,83 @@
+{
+  "drill_id": "pitr-20261118T070127Z",
+  "type": "pitr",
+  "started_at": "2026-11-18T07:01:27.857Z",
+  "finished_at": "2026-11-18T07:12:42.007Z",
+  "result": "failed",
+  "environment": {
+    "topology": "single-host laboratory (docker compose); primary and recovery databases are containers on one machine",
+    "disclaimer": "Demonstrates the recovery procedure. NOT geographic disaster recovery and NOT evidence of production recovery times.",
+    "data": "synthetic"
+  },
+  "objectives": {
+    "rto_seconds": null,
+    "rpo_seconds": 0,
+    "note": "Recovery to a chosen moment: every transaction committed before the target is expected, none after it."
+  },
+  "observed": {
+    "rto_seconds": null,
+    "rpo_seconds": null,
+    "data_loss_transactions": null
+  },
+  "summary": "Failed: timed out after 600000 ms waiting for the recovery instance to reach the target and promote",
+  "steps": [
+    {
+      "name": "Prepare an empty work volume for the base backup",
+      "started_at": "2026-11-18T07:01:27.858Z",
+      "duration_ms": 792,
+      "status": "passed",
+      "detail": "titan-pitr-work"
+    },
+    {
+      "name": "Take a physical base backup of the primary (pg_basebackup, replication role)",
+      "started_at": "2026-11-18T07:01:28.651Z",
+      "duration_ms": 66851,
+      "status": "passed",
+      "detail": "6.1G in 66.9 s"
+    },
+    {
+      "name": "Write T1, choose the recovery target, write T2",
+      "started_at": "2026-11-18T07:02:35.502Z",
+      "duration_ms": 4469,
+      "status": "passed",
+      "detail": "T1 APP-2026-000257, target 2026-11-18 07:02:37.908+00, T2 APP-2026-000258"
+    },
+    {
+      "name": "Archive the WAL that contains both transactions",
+      "started_at": "2026-11-18T07:02:39.971Z",
+      "duration_ms": 430,
+      "status": "passed",
+      "detail": "segment 0000000300000008000000CF archived"
+    },
+    {
+      "name": "Start an isolated recovery instance: base backup + archived WAL, target time",
+      "started_at": "2026-11-18T07:02:40.402Z",
+      "duration_ms": 601587,
+      "status": "failed",
+      "detail": "timed out after 600000 ms waiting for the recovery instance to reach the target and promote"
+    }
+  ],
+  "evidence": {
+    "backup": {
+      "size": "6.1G",
+      "seconds": 66.9
+    },
+    "before": {
+      "id": "01cca936-4f0a-4e53-ab17-6275c6e35fc2",
+      "reference_no": "APP-2026-000257",
+      "created_at": "2026-11-18T07:02:35.713Z"
+    },
+    "target": "2026-11-18 07:02:37.908+00",
+    "after": {
+      "id": "4ef6cbbc-c967-4421-95d2-86656ab68a4f",
+      "reference_no": "APP-2026-000258",
+      "created_at": "2026-11-18T07:02:39.971Z"
+    },
+    "segment": "0000000300000008000000CF"
+  },
+  "limitations": [
+    "Both the primary and the recovery instance run on one workstation; this demonstrates the procedure only.",
+    "The WAL archive is a Docker volume on the same machine, kept for 3 days (WAL_ARCHIVE_RETENTION_DAYS). Production needs off-site archive storage.",
+    "Only the database cluster is recovered; services were not pointed at the recovered instance in this drill."
+  ]
+}

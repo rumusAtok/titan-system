@@ -203,18 +203,168 @@ Specification: [maintenance.openapi.json](maintenance.openapi.json)
 
 | Method | Path |
 | --- | --- |
+| GET | `/api/maintenance/planning/inspection-plans` |
+| GET | `/api/maintenance/planning/pm-plans` |
+| GET | `/api/maintenance/planning/rounds` |
+| GET | `/api/maintenance/planning/rounds/{id}` |
+| GET | `/api/maintenance/planning/upcoming` |
 | GET | `/api/maintenance/request-types` |
 | GET | `/api/maintenance/requests` |
 | GET | `/api/maintenance/requests/{id}` |
+| GET | `/api/maintenance/settings` |
 | GET | `/api/maintenance/summary` |
 | GET | `/api/maintenance/work-orders` |
 | GET | `/api/maintenance/work-orders/{id}` |
+| PATCH | `/api/maintenance/planning/inspection-plans/{id}` |
+| PATCH | `/api/maintenance/planning/pm-plans/{id}` |
+| POST | `/api/maintenance/planning/inspection-plans` |
+| POST | `/api/maintenance/planning/inspection-plans/{id}/generate` |
+| POST | `/api/maintenance/planning/pm-plans` |
+| POST | `/api/maintenance/planning/pm-plans/{id}/generate` |
+| POST | `/api/maintenance/planning/rounds/{id}/complete` |
 | POST | `/api/maintenance/requests` |
 | POST | `/api/maintenance/requests/{id}/cancel` |
 | POST | `/api/maintenance/work-orders/{id}/assign` |
 | POST | `/api/maintenance/work-orders/{id}/cancel` |
 | POST | `/api/maintenance/work-orders/{id}/complete` |
 | POST | `/api/maintenance/work-orders/{id}/start` |
+| PUT | `/api/maintenance/settings` |
+
+## TITAN document-service (`/api/document`)
+
+Controlled documents: versions, malware-scan hook, review through the workflow engine, retention classes, legal hold, disposal and links to records.
+
+Specification: [document.openapi.json](document.openapi.json)
+
+| Method | Path |
+| --- | --- |
+| DELETE | `/api/document/documents/{id}/links/{subjectType}/{subjectId}` |
+| GET | `/api/document/documents` |
+| GET | `/api/document/documents/summary` |
+| GET | `/api/document/documents/{id}` |
+| GET | `/api/document/documents/{id}/versions/{version}/content` |
+| GET | `/api/document/retention-classes` |
+| GET | `/api/document/versions/{id}` |
+| POST | `/api/document/documents` |
+| POST | `/api/document/documents/{id}/dispose` |
+| POST | `/api/document/documents/{id}/legal-hold` |
+| POST | `/api/document/documents/{id}/links` |
+| POST | `/api/document/documents/{id}/versions` |
+| POST | `/api/document/documents/{id}/versions/{version}/submit` |
+
+## TITAN geospatial-service (`/api/geo`)
+
+Zones and geofences, spatial queries over located assets, devices and cameras, and incident-in-zone alerts.
+
+Specification: [geo.openapi.json](geo.openapi.json)
+
+| Method | Path |
+| --- | --- |
+| GET | `/api/geo/incidents` |
+| GET | `/api/geo/layers` |
+| GET | `/api/geo/locate` |
+| GET | `/api/geo/nearby` |
+| GET | `/api/geo/zones` |
+| GET | `/api/geo/zones/{id}/features` |
+| PATCH | `/api/geo/zones/{id}` |
+| POST | `/api/geo/backfill` |
+| POST | `/api/geo/zones` |
+
+## TITAN procurement-service (`/api/procurement`)
+
+Suppliers, stock items and levels, purchase requests with approval, purchase orders (internal records), goods receipts, stock issues and replenishment.
+
+Specification: [procurement.openapi.json](procurement.openapi.json)
+
+| Method | Path |
+| --- | --- |
+| GET | `/api/procurement/cost-centres` |
+| GET | `/api/procurement/items` |
+| GET | `/api/procurement/items/{sku}/movements` |
+| GET | `/api/procurement/purchase-orders` |
+| GET | `/api/procurement/purchase-orders/{id}` |
+| GET | `/api/procurement/purchase-requests` |
+| GET | `/api/procurement/purchase-requests/{id}` |
+| GET | `/api/procurement/rfqs` |
+| GET | `/api/procurement/rfqs/{id}` |
+| GET | `/api/procurement/summary` |
+| GET | `/api/procurement/suppliers` |
+| POST | `/api/procurement/cost-centres` |
+| POST | `/api/procurement/items` |
+| POST | `/api/procurement/purchase-orders/{id}/receive` |
+| POST | `/api/procurement/purchase-requests` |
+| POST | `/api/procurement/purchase-requests/{id}/cancel` |
+| POST | `/api/procurement/rfqs` |
+| POST | `/api/procurement/rfqs/{id}/award` |
+| POST | `/api/procurement/rfqs/{id}/cancel` |
+| POST | `/api/procurement/rfqs/{id}/quotations` |
+| POST | `/api/procurement/stock/adjust` |
+| POST | `/api/procurement/stock/issue` |
+| POST | `/api/procurement/suppliers` |
+| PUT | `/api/procurement/cost-centres/{code}/budget` |
+
+## TITAN report-service (`/api/report`)
+
+Report definitions over the registered analytics datasets, generated on request with the caller's access, as CSV and printable HTML; due-date reminders.
+
+Specification: [report.openapi.json](report.openapi.json)
+
+| Method | Path |
+| --- | --- |
+| GET | `/api/report/datasets` |
+| GET | `/api/report/definitions` |
+| GET | `/api/report/definitions/{id}` |
+| GET | `/api/report/runs` |
+| GET | `/api/report/runs/{id}` |
+| GET | `/api/report/runs/{id}/csv` |
+| GET | `/api/report/runs/{id}/html` |
+| GET | `/api/report/runs/{id}/pdf` |
+| GET | `/api/report/runs/{id}/xlsx` |
+| PATCH | `/api/report/definitions/{id}` |
+| POST | `/api/report/definitions` |
+| POST | `/api/report/definitions/{id}/generate` |
+
+## TITAN integration-service (`/api/integration`)
+
+Signed inbound webhooks that report incidents, and outbound event subscriptions delivered (signed, with retries) to allow-listed destinations only.
+
+Specification: [integration.openapi.json](integration.openapi.json)
+
+| Method | Path |
+| --- | --- |
+| GET | `/api/integration/catalogue` |
+| GET | `/api/integration/endpoints` |
+| GET | `/api/integration/endpoints/{id}/messages` |
+| GET | `/api/integration/subscriptions` |
+| GET | `/api/integration/subscriptions/{id}/deliveries` |
+| PATCH | `/api/integration/endpoints/{id}` |
+| PATCH | `/api/integration/subscriptions/{id}` |
+| POST | `/api/integration/deliveries/{id}/retry` |
+| POST | `/api/integration/endpoints` |
+| POST | `/api/integration/endpoints/{id}/rotate-secret` |
+| POST | `/api/integration/subscriptions` |
+
+## TITAN video-service (`/api/video`)
+
+Camera register, audited viewing sessions, recording metadata (clips stay in the external VMS) with retention and legal hold, and incident markers. No video is stored or analysed.
+
+Specification: [video.openapi.json](video.openapi.json)
+
+| Method | Path |
+| --- | --- |
+| GET | `/api/video/cameras` |
+| GET | `/api/video/cameras/{id}` |
+| GET | `/api/video/incidents` |
+| GET | `/api/video/incidents/{id}/markers` |
+| GET | `/api/video/sessions` |
+| PATCH | `/api/video/cameras/{id}` |
+| POST | `/api/video/cameras` |
+| POST | `/api/video/cameras/{id}/markers` |
+| POST | `/api/video/cameras/{id}/recordings` |
+| POST | `/api/video/cameras/{id}/sessions` |
+| POST | `/api/video/cameras/{id}/status` |
+| POST | `/api/video/recordings/{id}/legal-hold` |
+| POST | `/api/video/sessions/{id}/end` |
 
 ## TITAN analytics-service (`/api/analytics`)
 

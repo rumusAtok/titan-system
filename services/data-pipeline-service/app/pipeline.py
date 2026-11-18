@@ -27,7 +27,8 @@ from .gold import GOLD, build_gold
 
 PIPELINE = "operations"
 BRONZE_RETENTION_DAYS = int(os.environ.get("BRONZE_RETENTION_DAYS", "30"))
-MAX_EVENTS_PER_RUN = 250_000
+# Events read per run. Memory grows with it; a backlog is worked off over successive runs.
+MAX_EVENTS_PER_RUN = int(os.environ.get("PIPELINE_MAX_EVENTS_PER_RUN", "250000"))
 
 OWNERS = {
     "bronze_events": ("data-platform", "Raw platform events as received from the event stream"),
@@ -72,6 +73,19 @@ class PipelineRunner:
     @property
     def gold_dir(self) -> Path:
         return self._lake / "gold"
+
+    def fail_interrupted_runs(self) -> int:
+        """Runs still marked running when the (single) pipeline process starts were interrupted
+        by a restart: record them as failed, so the history is truthful and they can be retried.
+        The watermark was not advanced for them (it moves only when a run succeeds)."""
+        with self._db.tx(None) as conn:
+            cur = conn.execute(
+                """UPDATE pipeline_runs SET status = 'failed', finished_at = now(),
+                          error = 'interrupted: the pipeline process stopped during the run'
+                    WHERE pipeline = %s AND status = 'running'""",
+                (PIPELINE,),
+            )
+            return cur.rowcount
 
     def ensure_layout(self) -> None:
         """Creates empty, correctly typed silver files so gold queries work before any data exists."""

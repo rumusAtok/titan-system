@@ -5,7 +5,7 @@ import { bootstrapService, LOGGER, PlatformModule } from '@titan/platform';
 import { DrController } from './dr.controller.js';
 import { EventStream } from './event-stream.js';
 import { PlatformController, StreamController } from './platform.controller.js';
-import { createProxy } from './proxy.js';
+import { createProxy, createWebhookRelay } from './proxy.js';
 import { TokenBucketLimiter } from './rate-limit.js';
 import { buildUpstreams, type Upstream, UPSTREAMS } from './upstreams.js';
 
@@ -43,14 +43,20 @@ await bootstrapService({
     const limiter = new TokenBucketLimiter(Number(process.env.RATE_LIMIT_PER_MINUTE ?? 600));
     setInterval(() => limiter.sweep(), 60_000).unref();
 
+    const upstreams = app.get<Map<string, Upstream>>(UPSTREAMS);
     app.use(
       '/api',
       createProxy({
-        upstreams: app.get<Map<string, Upstream>>(UPSTREAMS),
+        upstreams,
         verifier: app.get(JwtVerifier),
         limiter,
         logger: app.get<Logger>(LOGGER),
       }),
     );
+
+    // Signed inbound webhooks from external systems (no user token; see createWebhookRelay).
+    const hookLimiter = new TokenBucketLimiter(Number(process.env.WEBHOOK_RATE_LIMIT_PER_MINUTE ?? 120));
+    setInterval(() => hookLimiter.sweep(), 60_000).unref();
+    app.use('/hooks', createWebhookRelay({ upstream: upstreams.get('integration')!, limiter: hookLimiter, logger: app.get<Logger>(LOGGER) }));
   },
 });

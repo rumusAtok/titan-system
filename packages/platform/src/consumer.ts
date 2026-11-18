@@ -60,6 +60,11 @@ export class EventConsumers implements OnApplicationBootstrap, OnApplicationShut
   /** Registers a durable consumer. Safe to call before NATS is connected. */
   register(definition: ConsumerDefinition): void {
     const def = { name: definition.name ?? this.config.SERVICE_NAME, subjects: definition.subjects, handler: definition.handler };
+    // Two registrations under one durable name would share one JetStream consumer: each handler
+    // would receive (and acknowledge) a share of the other's events, which are then lost to it.
+    if (this.definitions.some((d) => d.name === def.name)) {
+      throw new Error(`event consumer '${def.name}' is already registered: register all subjects once and dispatch by event type, or give it its own name`);
+    }
     this.definitions.push(def);
     if (this.started) void this.runConsumer(def);
   }

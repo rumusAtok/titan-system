@@ -17,6 +17,488 @@
   },
   "openapi": "3.0.0",
   "paths": {
+    "/planning/inspection-plans": {
+      "get": {
+        "operationId": "PlanningController_inspectionPlans",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "maintenance-planning"
+        ]
+      },
+      "post": {
+        "operationId": "PlanningController_createInspection",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "asset_id": {
+                    "default": null,
+                    "format": "uuid",
+                    "nullable": true,
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "type": "string"
+                  },
+                  "assigned_role": {
+                    "pattern": "^[a-z][a-z0-9_]{1,62}$",
+                    "type": "string"
+                  },
+                  "checklist": {
+                    "items": {
+                      "properties": {
+                        "key": {
+                          "pattern": "^[a-z][a-z0-9_]{0,40}$",
+                          "type": "string"
+                        },
+                        "kind": {
+                          "enum": [
+                            "pass_fail",
+                            "number"
+                          ],
+                          "type": "string"
+                        },
+                        "max": {
+                          "type": "number"
+                        },
+                        "min": {
+                          "type": "number"
+                        },
+                        "question": {
+                          "maxLength": 200,
+                          "minLength": 3,
+                          "type": "string"
+                        },
+                        "unit": {
+                          "maxLength": 20,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "question",
+                        "kind"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 60,
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "code": {
+                    "pattern": "^[A-Z0-9][A-Z0-9_-]{1,31}$",
+                    "type": "string"
+                  },
+                  "finding_request_type": {
+                    "pattern": "^[a-z][a-z0-9-]{1,62}$",
+                    "type": "string"
+                  },
+                  "interval_days": {
+                    "maximum": 3650,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "location": {
+                    "default": "",
+                    "maxLength": 200,
+                    "type": "string"
+                  },
+                  "name": {
+                    "maxLength": 200,
+                    "minLength": 3,
+                    "type": "string"
+                  },
+                  "next_due_on": {
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "code",
+                  "name",
+                  "checklist",
+                  "interval_days",
+                  "next_due_on",
+                  "assigned_role",
+                  "finding_request_type"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "maintenance-planning"
+        ]
+      }
+    },
+    "/planning/inspection-plans/{id}": {
+      "patch": {
+        "operationId": "PlanningController_setInspection",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "active": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "active"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "maintenance-planning"
+        ]
+      }
+    },
+    "/planning/inspection-plans/{id}/generate": {
+      "post": {
+        "operationId": "PlanningController_generateRound",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "maintenance-planning"
+        ]
+      }
+    },
+    "/planning/pm-plans": {
+      "get": {
+        "operationId": "PlanningController_pmPlans",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "maintenance-planning"
+        ]
+      },
+      "post": {
+        "operationId": "PlanningController_createPm",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "asset_id": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "type": "string"
+                  },
+                  "checklist": {
+                    "default": [],
+                    "items": {
+                      "maxLength": 200,
+                      "minLength": 2,
+                      "type": "string"
+                    },
+                    "maxItems": 40,
+                    "type": "array"
+                  },
+                  "code": {
+                    "pattern": "^[A-Z0-9][A-Z0-9_-]{1,31}$",
+                    "type": "string"
+                  },
+                  "description": {
+                    "default": "",
+                    "maxLength": 2000,
+                    "type": "string"
+                  },
+                  "estimated_hours": {
+                    "default": null,
+                    "maximum": 1000,
+                    "minimum": 0,
+                    "nullable": true,
+                    "type": "number"
+                  },
+                  "interval_days": {
+                    "maximum": 3650,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "lead_days": {
+                    "default": 3,
+                    "maximum": 90,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "name": {
+                    "maxLength": 200,
+                    "minLength": 3,
+                    "type": "string"
+                  },
+                  "next_due_on": {
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "type": "string"
+                  },
+                  "priority": {
+                    "default": "normal",
+                    "enum": [
+                      "low",
+                      "normal",
+                      "high",
+                      "urgent"
+                    ],
+                    "type": "string"
+                  },
+                  "request_type": {
+                    "pattern": "^[a-z][a-z0-9-]{1,62}$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "code",
+                  "name",
+                  "asset_id",
+                  "request_type",
+                  "interval_days",
+                  "next_due_on"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Preventive plan: a work order is opened every interval_days, lead_days before it is due",
+        "tags": [
+          "maintenance-planning"
+        ]
+      }
+    },
+    "/planning/pm-plans/{id}": {
+      "patch": {
+        "operationId": "PlanningController_setPm",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "active": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "active"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "maintenance-planning"
+        ]
+      }
+    },
+    "/planning/pm-plans/{id}/generate": {
+      "post": {
+        "operationId": "PlanningController_generatePm",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Open the work order for the next due date now",
+        "tags": [
+          "maintenance-planning"
+        ]
+      }
+    },
+    "/planning/rounds": {
+      "get": {
+        "operationId": "PlanningController_rounds",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "maintenance-planning"
+        ]
+      }
+    },
+    "/planning/rounds/{id}": {
+      "get": {
+        "operationId": "PlanningController_round",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "maintenance-planning"
+        ]
+      }
+    },
+    "/planning/rounds/{id}/complete": {
+      "post": {
+        "operationId": "PlanningController_completeRound",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "notes": {
+                    "default": "",
+                    "maxLength": 4000,
+                    "type": "string"
+                  },
+                  "results": {
+                    "additionalProperties": {
+                      "anyOf": [
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "number"
+                        }
+                      ]
+                    },
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "results"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Record inspection results; each failed item raises a finding request",
+        "tags": [
+          "maintenance-planning"
+        ]
+      }
+    },
+    "/planning/upcoming": {
+      "get": {
+        "operationId": "PlanningController_upcoming",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Preventive and inspection plans due within `days` days, and rounds waiting",
+        "tags": [
+          "maintenance-planning"
+        ]
+      }
+    },
     "/request-types": {
       "get": {
         "operationId": "MaintenanceController_requestTypes",
@@ -161,6 +643,73 @@
           }
         ],
         "summary": "Withdraw a request that has not been decided (requester or planner)",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/settings": {
+      "get": {
+        "operationId": "MaintenanceController_settings",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "maintenance"
+        ]
+      },
+      "put": {
+        "operationId": "MaintenanceController_saveSettings",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "currency": {
+                    "pattern": "^[A-Z]{3}$",
+                    "type": "string"
+                  },
+                  "labor_rate_per_hour": {
+                    "maximum": 100000,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "parts_store": {
+                    "pattern": "^[A-Z0-9][A-Z0-9_-]{1,31}$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "labor_rate_per_hour",
+                  "currency",
+                  "parts_store"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Labour rate, currency and default parts store of the tenant",
         "tags": [
           "maintenance"
         ]
@@ -336,6 +885,34 @@
                     "minimum": 0,
                     "nullable": true,
                     "type": "number"
+                  },
+                  "parts": {
+                    "default": [],
+                    "items": {
+                      "properties": {
+                        "location": {
+                          "pattern": "^[A-Z0-9][A-Z0-9_-]{1,31}$",
+                          "type": "string"
+                        },
+                        "quantity": {
+                          "exclusiveMinimum": true,
+                          "maximum": 100000,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "sku": {
+                          "pattern": "^[A-Z0-9][A-Z0-9_-]{1,40}$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "sku",
+                        "quantity"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 30,
+                    "type": "array"
                   },
                   "summary": {
                     "maxLength": 4000,

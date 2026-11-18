@@ -105,8 +105,14 @@ describe('Test A: multi-stage government approval', () => {
       { what: 'delivery of the approval e-mail' },
     );
     assert.equal(delivery.external, true);
-    assert.equal(delivery.adapter, 'log');
     assert.equal(delivery.recipient_address, 'alice.applicant@titan.example');
+    // Delivered for real over SMTP, to the local mail catcher only (nothing leaves the machine).
+    assert.equal(delivery.adapter, 'mailpit');
+    const inbox = await (await fetch(`http://127.0.0.1:${process.env.MAILPIT_HOST_PORT ?? 8025}/api/v1/messages?limit=200`)).json();
+    assert.ok(
+      inbox.messages.some((m: any) => m.To.some((t: any) => t.Address === 'alice.applicant@titan.example') && m.Subject === delivery.subject),
+      'the approval e-mail is in the catcher inbox',
+    );
   });
 
   it('the applicant can track status and see the full lifecycle', async () => {
